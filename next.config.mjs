@@ -4,7 +4,9 @@ const nextConfig = {
   output: 'standalone',
   
   // This prevents build-time pre-rendering errors when Supabase credentials are missing
-  experimental: {},
+  experimental: {
+    esmExternals: true, // or whatever value you have set
+  },
   
   // Allow placement images from any source
   images: {
