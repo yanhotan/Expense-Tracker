@@ -1,5 +1,3 @@
-"use client"
-
 import { ExpenseSpreadsheet } from "@/components/expense-spreadsheet"
 import { ExpenseCharts } from "@/components/expense-charts"
 

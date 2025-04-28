@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from "date-fns"
 import { Save } from "lucide-react"
+import { v4 as uuidv4 } from 'uuid'
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -10,12 +11,16 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/components/ui/use-toast"
-import { getExpenses, saveExpenses, type Expense } from "@/lib/data"
+import { getExpenses, addExpense, deleteExpense, updateExpense, type Expense } from "@/lib/data"
 
 export function ExpenseSpreadsheet() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date())
   const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [unsavedChanges, setUnsavedChanges] = useState<{
+    [key: string]: { date: Date; category: string; value: string; originalExpense?: Expense }
+  }>({})
 
   // Generate dates for the current month
   const daysInMonth = eachDayOfInterval({
@@ -25,39 +30,68 @@ export function ExpenseSpreadsheet() {
 
   // Initialize or load data
   useEffect(() => {
-    const storedExpenses = getExpenses()
-    setExpenses(storedExpenses)
-    setIsLoading(false)
+    async function loadExpenses() {
+      setIsLoading(true)
+      try {
+        const storedExpenses = await getExpenses()
+        setExpenses(storedExpenses)
+      } catch (error) {
+        console.error('Error loading expenses:', error)
+        toast({
+          title: "Error",
+          description: "Failed to load expenses. Please try again.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadExpenses()
   }, [])
 
   // Handle expense input change
   const handleExpenseChange = (date: Date, category: string, value: string) => {
     const amount = value === "" ? 0 : Number.parseFloat(value)
-
     if (isNaN(amount)) return
 
-    setExpenses((prev) => {
-      // Find if there's an existing expense for this date and category
-      const existingIndex = prev.findIndex((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
+    // Create a unique key for this date-category combination
+    const key = `${date.toISOString()}-${category}`
+    
+    // Find if there's an existing expense for this date and category
+    const existingExpense = expenses.find((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
 
+    // Update unsaved changes
+    setUnsavedChanges(prev => ({
+      ...prev,
+      [key]: {
+        date,
+        category,
+        value: value === "" ? "0" : value,
+        originalExpense: existingExpense
+      }
+    }))
+
+    // Update local state for immediate UI feedback
+    setExpenses((prev) => {
+      const existingIndex = prev.findIndex((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
       const newExpenses = [...prev]
 
       if (existingIndex >= 0) {
-        // Update existing expense
         if (amount === 0) {
-          // Remove if amount is 0
+          // Remove locally if amount is 0
           newExpenses.splice(existingIndex, 1)
         } else {
-          // Update amount
+          // Update amount locally
           newExpenses[existingIndex] = {
             ...newExpenses[existingIndex],
             amount,
           }
         }
       } else if (amount > 0) {
-        // Add new expense if amount > 0
+        // Add new expense locally if amount > 0
         newExpenses.push({
-          id: Date.now().toString(),
+          id: `temp-${Date.now()}`, // Temporary ID until saved to Supabase
           date: date.toISOString(),
           amount,
           category,
@@ -69,19 +103,74 @@ export function ExpenseSpreadsheet() {
     })
   }
 
-  // Save expenses to localStorage
-  const handleSave = () => {
-    saveExpenses(expenses)
-    toast({
-      title: "Expenses saved",
-      description: "Your expense data has been saved successfully.",
-    })
+  // Save expenses to Supabase
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      // Process all unsaved changes
+      const changeKeys = Object.keys(unsavedChanges)
+      
+      for (const key of changeKeys) {
+        const change = unsavedChanges[key]
+        const amount = Number.parseFloat(change.value)
+        
+        if (change.originalExpense) {
+          // Existing expense
+          if (amount === 0) {
+            // Delete the expense
+            await deleteExpense(change.originalExpense.id)
+          } else {
+            // Update the expense
+            await updateExpense({
+              ...change.originalExpense,
+              amount
+            })
+          }
+        } else if (amount > 0) {
+          // New expense
+          await addExpense({
+            id: uuidv4(),
+            date: change.date.toISOString(),
+            amount,
+            category: change.category,
+            description: `Expense on ${format(change.date, "MMM dd")}`,
+          })
+        }
+      }
+      
+      // Fetch the updated expenses
+      const updatedExpenses = await getExpenses()
+      setExpenses(updatedExpenses)
+      
+      // Clear unsaved changes
+      setUnsavedChanges({})
+
+      toast({
+        title: "Expenses saved",
+        description: "Your expense data has been saved successfully to Supabase.",
+      })
+    } catch (error) {
+      console.error('Error saving expenses:', error)
+      toast({
+        title: "Error",
+        description: "Failed to save expenses. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Get expense amount for a specific date and category
   const getExpenseAmount = (date: Date, category: string): string => {
-    const expense = expenses.find((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
+    // Check for unsaved changes first
+    const key = `${date.toISOString()}-${category}`
+    if (unsavedChanges[key]) {
+      return unsavedChanges[key].value === "0" ? "" : unsavedChanges[key].value
+    }
 
+    // Otherwise use the expense from state
+    const expense = expenses.find((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
     return expense ? expense.amount.toString() : ""
   }
 
@@ -102,6 +191,22 @@ export function ExpenseSpreadsheet() {
 
   // Categories
   const categories = ["food", "accessories", "transport", "investment", "others"]
+
+  if (isLoading) {
+    return (
+      <Card className="p-8">
+        <div className="flex justify-center items-center h-64">
+          <div className="text-center">
+            <svg className="animate-spin h-8 w-8 mx-auto mb-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p>Loading expense data...</p>
+          </div>
+        </div>
+      </Card>
+    )
+  }
 
   return (
     <Card className="overflow-auto">
@@ -151,9 +256,21 @@ export function ExpenseSpreadsheet() {
           </Select>
         </div>
 
-        <Button onClick={handleSave} className="ml-auto">
-          <Save className="mr-2 h-4 w-4" />
-          Save
+        <Button onClick={handleSave} disabled={isSaving || Object.keys(unsavedChanges).length === 0} className="ml-auto">
+          {isSaving ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="mr-2 h-4 w-4" />
+              Save {Object.keys(unsavedChanges).length > 0 ? `(${Object.keys(unsavedChanges).length})` : ''}
+            </>
+          )}
         </Button>
       </div>
 

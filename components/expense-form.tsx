@@ -6,6 +6,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { CalendarIcon } from "lucide-react"
 import { format } from "date-fns"
+import { v4 as uuidv4 } from 'uuid'
 
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
@@ -24,7 +25,7 @@ export function ExpenseForm() {
   const [date, setDate] = useState<Date>(new Date())
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setIsSubmitting(true)
 
@@ -43,21 +44,32 @@ export function ExpenseForm() {
       return
     }
 
-    addExpense({
-      id: Date.now().toString(),
-      date: date.toISOString(),
-      amount,
-      category,
-      description,
-    })
+    try {
+      await addExpense({
+        id: uuidv4(),
+        date: date.toISOString(),
+        amount,
+        category,
+        description,
+      })
 
-    toast({
-      title: "Expense added",
-      description: "Your expense has been recorded successfully.",
-    })
+      toast({
+        title: "Expense added",
+        description: "Your expense has been recorded successfully.",
+      })
 
-    router.push("/expenses")
-    router.refresh()
+      router.push("/expenses")
+      router.refresh()
+    } catch (error) {
+      console.error('Error adding expense:', error)
+      toast({
+        title: "Error",
+        description: "Failed to add expense. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (

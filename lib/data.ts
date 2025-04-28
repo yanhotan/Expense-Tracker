@@ -1,59 +1,89 @@
 "use client"
 
+import { supabase } from './supabase'
+import { v4 as uuidv4 } from 'uuid'
+
 export interface Expense {
   id: string
   date: string
   amount: number
   category: string
   description?: string
+  user_id?: string
+  created_at?: string
 }
 
-// Local storage key
-const EXPENSES_KEY = "expense-tracker-expenses"
+// Get all expenses from Supabase
+export async function getExpenses(): Promise<Expense[]> {
+  // When using Supabase, we need to filter by user_id to get only the current user's expenses
+  // For now, we'll use a placeholder user_id - this should be replaced with actual auth
+  const user_id = "current-user" // In a real app, this would come from authentication
 
-// Get all expenses from localStorage
-export function getExpenses(): Expense[] {
-  if (typeof window === "undefined") return []
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('*')
+    .eq('user_id', user_id)
+    .order('date', { ascending: false })
 
-  const storedExpenses = localStorage.getItem(EXPENSES_KEY)
-  if (!storedExpenses) return []
-
-  try {
-    return JSON.parse(storedExpenses)
-  } catch (error) {
-    console.error("Failed to parse expenses from localStorage", error)
+  if (error) {
+    console.error('Error fetching expenses:', error)
     return []
   }
-}
 
-// Save all expenses to localStorage
-export function saveExpenses(expenses: Expense[]): void {
-  localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses))
+  return data || []
 }
 
 // Add a new expense
-export function addExpense(expense: Expense): void {
-  const expenses = getExpenses()
-  expenses.push(expense)
-  saveExpenses(expenses)
+export async function addExpense(expense: Expense): Promise<void> {
+  const user_id = "current-user" // In a real app, this would come from authentication
+  
+  const newExpense = {
+    ...expense,
+    id: expense.id || uuidv4(),
+    user_id,
+    created_at: new Date().toISOString()
+  }
+
+  const { error } = await supabase
+    .from('expenses')
+    .insert(newExpense)
+
+  if (error) {
+    console.error('Error adding expense:', error)
+    throw error
+  }
 }
 
 // Delete an expense
-export function deleteExpense(id: string): void {
-  const expenses = getExpenses()
-  const updatedExpenses = expenses.filter((expense) => expense.id !== id)
-  saveExpenses(updatedExpenses)
+export async function deleteExpense(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('expenses')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    console.error('Error deleting expense:', error)
+    throw error
+  }
 }
 
 // Update an expense
-export function updateExpense(updatedExpense: Expense): void {
-  const expenses = getExpenses()
-  const updatedExpenses = expenses.map((expense) => (expense.id === updatedExpense.id ? updatedExpense : expense))
-  saveExpenses(updatedExpenses)
+export async function updateExpense(updatedExpense: Expense): Promise<void> {
+  const { error } = await supabase
+    .from('expenses')
+    .update(updatedExpense)
+    .eq('id', updatedExpense.id)
+
+  if (error) {
+    console.error('Error updating expense:', error)
+    throw error
+  }
 }
 
 // Get totals by category
-export function getCategoryTotals(expenses: Expense[] = getExpenses()): Record<string, number> {
+export async function getCategoryTotals(): Promise<Record<string, number>> {
+  const expenses = await getExpenses()
+  
   return expenses.reduce(
     (acc, expense) => {
       const category = expense.category
@@ -65,7 +95,8 @@ export function getCategoryTotals(expenses: Expense[] = getExpenses()): Record<s
 }
 
 // Get monthly totals
-export function getMonthlyTotal(expenses: Expense[] = getExpenses()): Record<string, number> {
+export async function getMonthlyTotal(): Promise<Record<string, number>> {
+  const expenses = await getExpenses()
   const monthlyTotals: Record<string, number> = {}
 
   expenses.forEach((expense) => {
@@ -79,7 +110,8 @@ export function getMonthlyTotal(expenses: Expense[] = getExpenses()): Record<str
 }
 
 // Get total for the current month
-export function getCurrentMonthTotal(expenses: Expense[] = getExpenses()): number {
+export async function getCurrentMonthTotal(): Promise<number> {
+  const expenses = await getExpenses()
   const now = new Date()
   const currentMonth = now.getMonth()
   const currentYear = now.getFullYear()
@@ -98,7 +130,8 @@ export function getCurrentMonthTotal(expenses: Expense[] = getExpenses()): numbe
 }
 
 // Get total for the previous month
-export function getPreviousMonthTotal(expenses: Expense[] = getExpenses()): number {
+export async function getPreviousMonthTotal(): Promise<number> {
+  const expenses = await getExpenses()
   const now = new Date()
   const currentMonth = now.getMonth()
   const currentYear = now.getFullYear()

@@ -1,5 +1,3 @@
-"use client"
-
 import Link from "next/link"
 import { PlusCircle } from "lucide-react"
 
@@ -7,8 +5,8 @@ import { Button } from "@/components/ui/button"
 import { ExpenseTable } from "@/components/expense-table"
 import { getExpenses } from "@/lib/data"
 
-export default function ExpensesPage() {
-  const expenses = getExpenses()
+export default async function ExpensesPage() {
+  const expenses = await getExpenses()
 
   return (
     <div className="container mx-auto py-10">

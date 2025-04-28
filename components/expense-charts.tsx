@@ -6,17 +6,31 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ExpensesByCategory } from "@/components/charts/expenses-by-category"
 import { MonthlyExpenses } from "@/components/charts/monthly-expenses"
-import { getExpenses, getCategoryTotals, getMonthlyTotal } from "@/lib/data"
+import { getCategoryTotals, getMonthlyTotal } from "@/lib/data"
 
 export function ExpenseCharts() {
   const [categoryTotals, setCategoryTotals] = useState<Record<string, number>>({})
   const [monthlyTotals, setMonthlyTotals] = useState<Record<string, number>>({})
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Load data
-    const expenses = getExpenses()
-    setCategoryTotals(getCategoryTotals(expenses))
-    setMonthlyTotals(getMonthlyTotal(expenses))
+    // Load data asynchronously
+    async function loadData() {
+      try {
+        setIsLoading(true)
+        const categoryData = await getCategoryTotals()
+        const monthlyData = await getMonthlyTotal()
+        
+        setCategoryTotals(categoryData)
+        setMonthlyTotals(monthlyData)
+      } catch (error) {
+        console.error('Error loading chart data:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    loadData()
   }, [])
 
   return (
@@ -26,29 +40,43 @@ export function ExpenseCharts() {
         <TabsTrigger value="monthly">Monthly Trend</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="categories">
-        <Card>
-          <CardHeader>
-            <CardTitle>Expenses by Category</CardTitle>
-            <CardDescription>Breakdown of your spending across different categories</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[400px]">
-            <ExpensesByCategory data={categoryTotals} />
-          </CardContent>
-        </Card>
-      </TabsContent>
+      {isLoading ? (
+        <div className="h-[400px] flex items-center justify-center">
+          <div className="text-center">
+            <svg className="animate-spin h-8 w-8 mx-auto mb-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p>Loading chart data...</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <TabsContent value="categories">
+            <Card>
+              <CardHeader>
+                <CardTitle>Expenses by Category</CardTitle>
+                <CardDescription>Breakdown of your spending across different categories</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[400px]">
+                <ExpensesByCategory data={categoryTotals} />
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-      <TabsContent value="monthly">
-        <Card>
-          <CardHeader>
-            <CardTitle>Monthly Expenses</CardTitle>
-            <CardDescription>Your spending trend over the past months</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[400px]">
-            <MonthlyExpenses data={monthlyTotals} />
-          </CardContent>
-        </Card>
-      </TabsContent>
+          <TabsContent value="monthly">
+            <Card>
+              <CardHeader>
+                <CardTitle>Monthly Expenses</CardTitle>
+                <CardDescription>Your spending trend over the past months</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[400px]">
+                <MonthlyExpenses data={monthlyTotals} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </>
+      )}
     </Tabs>
   )
 }

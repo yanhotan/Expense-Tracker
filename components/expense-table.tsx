@@ -33,21 +33,34 @@ export function ExpenseTable({ expenses }: ExpenseTableProps) {
   const [editedAmount, setEditedAmount] = useState("")
   const [editedCategory, setEditedCategory] = useState("")
   const [editedDescription, setEditedDescription] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleDelete = (expense: Expense) => {
     setSelectedExpense(expense)
     setIsDeleteDialogOpen(true)
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (selectedExpense) {
-      deleteExpense(selectedExpense.id)
-      toast({
-        title: "Expense deleted",
-        description: "The expense has been deleted successfully.",
-      })
-      setIsDeleteDialogOpen(false)
-      router.refresh()
+      setIsSubmitting(true)
+      try {
+        await deleteExpense(selectedExpense.id)
+        toast({
+          title: "Expense deleted",
+          description: "The expense has been deleted successfully.",
+        })
+        setIsDeleteDialogOpen(false)
+        router.refresh()
+      } catch (error) {
+        console.error('Error deleting expense:', error)
+        toast({
+          title: "Error",
+          description: "Failed to delete expense. Please try again.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsSubmitting(false)
+      }
     }
   }
 
@@ -59,7 +72,7 @@ export function ExpenseTable({ expenses }: ExpenseTableProps) {
     setIsEditDialogOpen(true)
   }
 
-  const confirmEdit = () => {
+  const confirmEdit = async () => {
     if (selectedExpense) {
       const amount = Number.parseFloat(editedAmount)
 
@@ -72,20 +85,32 @@ export function ExpenseTable({ expenses }: ExpenseTableProps) {
         return
       }
 
-      updateExpense({
-        ...selectedExpense,
-        amount,
-        category: editedCategory,
-        description: editedDescription,
-      })
+      setIsSubmitting(true)
+      try {
+        await updateExpense({
+          ...selectedExpense,
+          amount,
+          category: editedCategory,
+          description: editedDescription,
+        })
 
-      toast({
-        title: "Expense updated",
-        description: "The expense has been updated successfully.",
-      })
+        toast({
+          title: "Expense updated",
+          description: "The expense has been updated successfully.",
+        })
 
-      setIsEditDialogOpen(false)
-      router.refresh()
+        setIsEditDialogOpen(false)
+        router.refresh()
+      } catch (error) {
+        console.error('Error updating expense:', error)
+        toast({
+          title: "Error",
+          description: "Failed to update expense. Please try again.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsSubmitting(false)
+      }
     }
   }
 
@@ -197,8 +222,8 @@ export function ExpenseTable({ expenses }: ExpenseTableProps) {
             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
-              Delete
+            <Button variant="destructive" onClick={confirmDelete} disabled={isSubmitting}>
+              {isSubmitting ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -255,7 +280,9 @@ export function ExpenseTable({ expenses }: ExpenseTableProps) {
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={confirmEdit}>Save Changes</Button>
+            <Button onClick={confirmEdit} disabled={isSubmitting}>
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
