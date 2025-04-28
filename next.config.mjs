@@ -3,11 +3,6 @@ const nextConfig = {
   // Output as standalone to improve deployment reliability
   output: 'standalone',
   
-  // This prevents build-time pre-rendering errors when Supabase credentials are missing
-  experimental: {
-    esmExternals: true, // or whatever value you have set
-  },
-  
   // Allow placement images from any source
   images: {
     domains: ['placeholder-for-build.supabase.co'],
