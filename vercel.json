@@ -4,5 +4,11 @@
   "framework": null,
   "env": {
     "NEXT_TELEMETRY_DISABLED": "1"
-  }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "regions": ["all"]
 }

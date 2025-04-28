@@ -1,15 +1,44 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { ArrowDownIcon, ArrowUpIcon, DollarSign } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getExpenses, getCurrentMonthTotal, getPreviousMonthTotal, getCategoryTotals } from "@/lib/data"
+import type { Expense } from "@/lib/data"
 
 export function ExpenseSummary() {
-  const expenses = getExpenses()
-  const currentMonthTotal = getCurrentMonthTotal()
-  const previousMonthTotal = getPreviousMonthTotal()
-  const categoryTotals = getCategoryTotals()
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [currentMonthTotal, setCurrentMonthTotal] = useState<number>(0)
+  const [previousMonthTotal, setPreviousMonthTotal] = useState<number>(0)
+  const [categoryTotals, setCategoryTotals] = useState<Record<string, number>>({})
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Fetch data
+  useEffect(() => {
+    async function loadData() {
+      setIsLoading(true)
+      try {
+        // Fetch all data needed for this component
+        const fetchedExpenses = await getExpenses()
+        const currentTotal = await getCurrentMonthTotal()
+        const prevTotal = await getPreviousMonthTotal()
+        const categories = await getCategoryTotals()
+
+        // Update state
+        setExpenses(fetchedExpenses)
+        setCurrentMonthTotal(currentTotal)
+        setPreviousMonthTotal(prevTotal)
+        setCategoryTotals(categories)
+      } catch (error) {
+        console.error('Error loading expense summary data:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadData()
+  }, [])
 
   // Find the category with the highest spending
   const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0] || ["None", 0]
@@ -22,6 +51,26 @@ export function ExpenseSummary() {
       style: "currency",
       currency: "USD",
     }).format(amount)
+  }
+
+  // Loading state UI
+  if (isLoading) {
+    return (
+      <>
+        {[1, 2, 3].map((i) => (
+          <Card key={i}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div className="h-5 w-32 bg-gray-200 animate-pulse rounded"></div>
+              <div className="h-4 w-4 bg-gray-200 animate-pulse rounded"></div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-7 w-24 bg-gray-200 animate-pulse rounded mb-2"></div>
+              <div className="h-4 w-36 bg-gray-200 animate-pulse rounded"></div>
+            </CardContent>
+          </Card>
+        ))}
+      </>
+    )
   }
 
   return (

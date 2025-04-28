@@ -1,3 +1,7 @@
+// Mark this page as dynamically rendered to avoid build-time errors
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 import { ExpenseSpreadsheet } from "@/components/expense-spreadsheet"
 import { ExpenseCharts } from "@/components/expense-charts"
 
