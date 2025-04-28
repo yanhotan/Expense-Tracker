@@ -1,13 +1,10 @@
 {
   "buildCommand": "npm run vercel-build",
   "installCommand": "npm install --legacy-peer-deps",
-  "framework": null,
+  "framework": "nextjs",
   "env": {
     "NEXT_TELEMETRY_DISABLED": "1"
   },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ],
   "cleanUrls": true,
   "trailingSlash": false,
   "regions": ["sin1"]
