@@ -1,9 +1,11 @@
 "use client"
 
 import Link from "next/link"
-
 import { Button } from "@/components/ui/button"
 import { ExpenseForm } from "@/components/expense-form"
+
+// Force dynamic rendering to prevent build-time errors
+export const dynamic = 'force-dynamic'
 
 export default function AddExpensePage() {
   return (

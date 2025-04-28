@@ -13,24 +13,62 @@ export interface Expense {
   created_at?: string
 }
 
+// Helper function to determine if we're in a build/SSR context
+const isServerRendering = () => {
+  return typeof window === 'undefined' && process.env.NODE_ENV === 'production';
+}
+
+// Fallback to localStorage during build process or when Supabase fails
+const getLocalExpenses = (): Expense[] => {
+  if (typeof window === "undefined") return [];
+  
+  try {
+    const stored = localStorage.getItem("expense-tracker-expenses");
+    return stored ? JSON.parse(stored) : [];
+  } catch (e) {
+    console.warn("Failed to get expenses from localStorage:", e);
+    return [];
+  }
+}
+
+const saveLocalExpenses = (expenses: Expense[]): void => {
+  if (typeof window === "undefined") return;
+  
+  try {
+    localStorage.setItem("expense-tracker-expenses", JSON.stringify(expenses));
+  } catch (e) {
+    console.warn("Failed to save expenses to localStorage:", e);
+  }
+}
+
 // Get all expenses from Supabase
 export async function getExpenses(): Promise<Expense[]> {
   // When using Supabase, we need to filter by user_id to get only the current user's expenses
   // For now, we'll use a placeholder user_id - this should be replaced with actual auth
-  const user_id = "current-user" // In a real app, this would come from authentication
+  const user_id = "current-user";
 
-  const { data, error } = await supabase
-    .from('expenses')
-    .select('*')
-    .eq('user_id', user_id)
-    .order('date', { ascending: false })
-
-  if (error) {
-    console.error('Error fetching expenses:', error)
-    return []
+  // During build or SSG processes, use dummy data
+  if (isServerRendering()) {
+    return [];
   }
 
-  return data || []
+  try {
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.warn('Supabase error, falling back to localStorage:', error);
+      return getLocalExpenses();
+    }
+
+    return data || [];
+  } catch (error) {
+    console.warn('Failed to fetch expenses from Supabase:', error);
+    return getLocalExpenses();
+  }
 }
 
 // Add a new expense
@@ -44,39 +82,92 @@ export async function addExpense(expense: Expense): Promise<void> {
     created_at: new Date().toISOString()
   }
 
-  const { error } = await supabase
-    .from('expenses')
-    .insert(newExpense)
+  // During SSR or build, don't try to save
+  if (isServerRendering()) {
+    return;
+  }
 
-  if (error) {
-    console.error('Error adding expense:', error)
-    throw error
+  try {
+    const { error } = await supabase
+      .from('expenses')
+      .insert(newExpense)
+
+    if (error) {
+      console.warn('Supabase error, falling back to localStorage:', error);
+      // Fall back to localStorage
+      const expenses = getLocalExpenses();
+      saveLocalExpenses([...expenses, newExpense]);
+      return;
+    }
+  } catch (error) {
+    console.warn('Failed to add expense to Supabase, using localStorage fallback:', error);
+    // Fall back to localStorage
+    const expenses = getLocalExpenses();
+    saveLocalExpenses([...expenses, newExpense]);
   }
 }
 
 // Delete an expense
 export async function deleteExpense(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('expenses')
-    .delete()
-    .eq('id', id)
+  // During SSR or build, don't try to delete
+  if (isServerRendering()) {
+    return;
+  }
 
-  if (error) {
-    console.error('Error deleting expense:', error)
-    throw error
+  try {
+    const { error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.warn('Supabase delete error, falling back to localStorage:', error);
+      // Fall back to localStorage
+      const expenses = getLocalExpenses();
+      const updatedExpenses = expenses.filter(expense => expense.id !== id);
+      saveLocalExpenses(updatedExpenses);
+      return;
+    }
+  } catch (error) {
+    console.warn('Failed to delete expense from Supabase, using localStorage fallback:', error);
+    // Fall back to localStorage
+    const expenses = getLocalExpenses();
+    const updatedExpenses = expenses.filter(expense => expense.id !== id);
+    saveLocalExpenses(updatedExpenses);
   }
 }
 
 // Update an expense
 export async function updateExpense(updatedExpense: Expense): Promise<void> {
-  const { error } = await supabase
-    .from('expenses')
-    .update(updatedExpense)
-    .eq('id', updatedExpense.id)
+  // During SSR or build, don't try to update
+  if (isServerRendering()) {
+    return;
+  }
 
-  if (error) {
-    console.error('Error updating expense:', error)
-    throw error
+  try {
+    const { error } = await supabase
+      .from('expenses')
+      .update(updatedExpense)
+      .eq('id', updatedExpense.id)
+
+    if (error) {
+      console.warn('Supabase update error, falling back to localStorage:', error);
+      // Fall back to localStorage
+      const expenses = getLocalExpenses();
+      const updatedExpenses = expenses.map(expense => 
+        expense.id === updatedExpense.id ? updatedExpense : expense
+      );
+      saveLocalExpenses(updatedExpenses);
+      return;
+    }
+  } catch (error) {
+    console.warn('Failed to update expense in Supabase, using localStorage fallback:', error);
+    // Fall back to localStorage
+    const expenses = getLocalExpenses();
+    const updatedExpenses = expenses.map(expense => 
+      expense.id === updatedExpense.id ? updatedExpense : expense
+    );
+    saveLocalExpenses(updatedExpenses);
   }
 }
 
