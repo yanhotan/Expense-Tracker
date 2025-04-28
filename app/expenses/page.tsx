@@ -5,6 +5,10 @@ import { Button } from "@/components/ui/button"
 import { ExpenseTable } from "@/components/expense-table"
 import { getExpenses } from "@/lib/data"
 
+// Mark this page as dynamically rendered to avoid build-time errors
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function ExpensesPage() {
   const expenses = await getExpenses()
 
