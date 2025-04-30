@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { CalendarIcon } from "lucide-react"
 import { format } from "date-fns"
@@ -21,7 +21,8 @@ import { cn } from "@/lib/utils"
 import { addExpense, getCategories } from "@/lib/data"
 import { getLastAccessedSheet } from "@/lib/sheets"
 
-export function ExpenseForm() {
+// Separate component that uses useSearchParams
+function ExpenseFormContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [date, setDate] = useState<Date>(new Date())
@@ -183,5 +184,14 @@ export function ExpenseForm() {
         </form>
       </CardContent>
     </Card>
+  )
+}
+
+// Main component with Suspense boundary
+export function ExpenseForm() {
+  return (
+    <Suspense fallback={<div className="text-center py-10">Loading expense form...</div>}>
+      <ExpenseFormContent />
+    </Suspense>
   )
 }

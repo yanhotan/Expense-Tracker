@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { ExpenseForm } from "@/components/expense-form"
 
@@ -23,7 +24,9 @@ export default function AddExpensePage() {
       </div>
 
       <div className="max-w-2xl mx-auto">
-        <ExpenseForm />
+        <Suspense fallback={<div className="text-center py-10">Loading expense form...</div>}>
+          <ExpenseForm />
+        </Suspense>
       </div>
     </div>
   )
