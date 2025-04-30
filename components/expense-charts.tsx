@@ -6,9 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ExpensesByCategory } from "@/components/charts/expenses-by-category"
 import { MonthlyExpenses } from "@/components/charts/monthly-expenses"
-import { getCategoryTotals, getMonthlyTotal } from "@/lib/data"
+import { getExpenses } from "@/lib/data"
 
-export function ExpenseCharts() {
+export function ExpenseCharts({ sheetId }: { sheetId: string }) {
   const [categoryTotals, setCategoryTotals] = useState<Record<string, number>>({})
   const [monthlyTotals, setMonthlyTotals] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
@@ -16,10 +16,33 @@ export function ExpenseCharts() {
   useEffect(() => {
     // Load data asynchronously
     async function loadData() {
+      if (!sheetId) {
+        console.warn('No sheet ID provided, cannot load chart data')
+        return
+      }
+      
       try {
         setIsLoading(true)
-        const categoryData = await getCategoryTotals()
-        const monthlyData = await getMonthlyTotal()
+        // We need to update the data methods to filter by sheetId
+        const expenses = await getExpenses(sheetId)
+        
+        // Calculate category totals for this sheet
+        const categoryData = expenses.reduce(
+          (acc, expense) => {
+            const category = expense.category
+            acc[category] = (acc[category] || 0) + expense.amount
+            return acc
+          },
+          {} as Record<string, number>
+        )
+        
+        // Calculate monthly totals for this sheet
+        const monthlyData: Record<string, number> = {}
+        expenses.forEach((expense) => {
+          const date = new Date(expense.date)
+          const monthYear = `${date.toLocaleString("default", { month: "short" })} ${date.getFullYear()}`
+          monthlyData[monthYear] = (monthlyData[monthYear] || 0) + expense.amount
+        })
         
         setCategoryTotals(categoryData)
         setMonthlyTotals(monthlyData)
@@ -31,7 +54,7 @@ export function ExpenseCharts() {
     }
     
     loadData()
-  }, [])
+  }, [sheetId]) // Re-run when sheet changes
 
   return (
     <Tabs defaultValue="categories">

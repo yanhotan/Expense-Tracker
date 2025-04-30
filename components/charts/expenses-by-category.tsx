@@ -1,8 +1,8 @@
 "use client"
 
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
-
 import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
+import { getChartCategoryColor } from "@/lib/data"
 
 interface ExpensesByCategoryProps {
   data: Record<string, number>
@@ -15,41 +15,21 @@ export function ExpensesByCategory({ data }: ExpensesByCategoryProps) {
     value,
   }))
 
-  // Define colors for each category
-  const COLORS = {
-    food: "hsl(var(--chart-1))",
-    accessories: "hsl(var(--chart-2))",
-    transport: "hsl(var(--chart-3))",
-    investment: "hsl(var(--chart-4))",
-    others: "hsl(var(--chart-5))",
-  }
+  // Create a dynamic config object
+  const chartConfig = chartData.reduce(
+    (config, item) => {
+      const categoryKey = item.name.toLowerCase()
+      config[categoryKey] = {
+        label: item.name,
+        color: getChartCategoryColor(categoryKey),
+      }
+      return config
+    },
+    {} as Record<string, { label: string; color: string }>
+  )
 
   return (
-    <ChartContainer
-      config={{
-        food: {
-          label: "Food",
-          color: COLORS.food,
-        },
-        accessories: {
-          label: "Accessories",
-          color: COLORS.accessories,
-        },
-        transport: {
-          label: "Transport",
-          color: COLORS.transport,
-        },
-        investment: {
-          label: "Investment",
-          color: COLORS.investment,
-        },
-        others: {
-          label: "Others",
-          color: COLORS.others,
-        },
-      }}
-      className="h-full"
-    >
+    <ChartContainer config={chartConfig} className="h-full">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
@@ -67,7 +47,7 @@ export function ExpensesByCategory({ data }: ExpensesByCategoryProps) {
             {chartData.map((entry, index) => (
               <Cell
                 key={`cell-${index}`}
-                fill={COLORS[entry.name.toLowerCase() as keyof typeof COLORS] || COLORS.others}
+                fill={getChartCategoryColor(entry.name.toLowerCase())}
               />
             ))}
           </Pie>

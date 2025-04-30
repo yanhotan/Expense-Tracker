@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from "date-fns"
-import { Save } from "lucide-react"
+import { PlusCircle, Save, Edit2, Trash2 } from "lucide-react"
 import { v4 as uuidv4 } from 'uuid'
 
 import { Button } from "@/components/ui/button"
@@ -11,16 +11,39 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/components/ui/use-toast"
-import { getExpenses, addExpense, deleteExpense, updateExpense, type Expense } from "@/lib/data"
+import { 
+  getExpenses, 
+  addExpense, 
+  deleteExpense, 
+  updateExpense, 
+  type Expense, 
+  getCategories,
+  addCategory,
+  removeCategory,
+  updateCategoryName
+} from "@/lib/data"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
-export function ExpenseSpreadsheet() {
+export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [categories, setCategories] = useState<string[]>([])
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date())
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [unsavedChanges, setUnsavedChanges] = useState<{
-    [key: string]: { date: Date; category: string; value: string; originalExpense?: Expense }
-  }>({})
+  const [isAddCategoryDialogOpen, setIsAddCategoryDialogOpen] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [isEditCategoryDialogOpen, setIsEditCategoryDialogOpen] = useState(false)
+  const [categoryToEdit, setCategoryToEdit] = useState({ oldName: "", newName: "" })
+  const [isDeleteCategoryDialogOpen, setIsDeleteCategoryDialogOpen] = useState(false)
+  const [categoryToDelete, setCategoryToDelete] = useState("")
 
   // Generate dates for the current month
   const daysInMonth = eachDayOfInterval({
@@ -31,16 +54,24 @@ export function ExpenseSpreadsheet() {
   // Initialize or load data
   useEffect(() => {
     async function loadExpenses() {
+      if (!sheetId) {
+        console.warn('No sheet ID provided, cannot load expenses')
+        return
+      }
+      
       setIsLoading(true)
       try {
-        const storedExpenses = await getExpenses()
-        setExpenses(storedExpenses)
+        // Load expenses for this specific sheet
+        const expenseData = await getExpenses(sheetId)
+        setExpenses(expenseData)
+        const storedCategories = getCategories()
+        setCategories(storedCategories)
       } catch (error) {
-        console.error('Error loading expenses:', error)
+        console.error('Failed to load expenses:', error)
         toast({
-          title: "Error",
-          description: "Failed to load expenses. Please try again.",
-          variant: "destructive",
+          title: 'Error',
+          description: 'Failed to load expense data. Please try again.',
+          variant: 'destructive',
         })
       } finally {
         setIsLoading(false)
@@ -48,112 +79,63 @@ export function ExpenseSpreadsheet() {
     }
 
     loadExpenses()
-  }, [])
+  }, [sheetId]) // Re-run when sheet changes
 
-  // Handle expense input change
-  const handleExpenseChange = (date: Date, category: string, value: string) => {
+  // Handle expense input change with auto-save
+  const handleExpenseChange = async (date: Date, category: string, value: string) => {
+    if (!sheetId) {
+      console.warn('No sheet ID provided, cannot save expense')
+      return
+    }
+    
     const amount = value === "" ? 0 : Number.parseFloat(value)
     if (isNaN(amount)) return
 
-    // Create a unique key for this date-category combination
-    const key = `${date.toISOString()}-${category}`
-    
-    // Find if there's an existing expense for this date and category
-    const existingExpense = expenses.find((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
+    setIsSaving(true)
+    try {
+      // Find if there's an existing expense for this date and category
+      const existingExpense = expenses.find((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
 
-    // Update unsaved changes
-    setUnsavedChanges(prev => ({
-      ...prev,
-      [key]: {
-        date,
-        category,
-        value: value === "" ? "0" : value,
-        originalExpense: existingExpense
-      }
-    }))
-
-    // Update local state for immediate UI feedback
-    setExpenses((prev) => {
-      const existingIndex = prev.findIndex((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
-      const newExpenses = [...prev]
-
-      if (existingIndex >= 0) {
+      if (existingExpense) {
         if (amount === 0) {
-          // Remove locally if amount is 0
-          newExpenses.splice(existingIndex, 1)
+          // Delete the expense if amount is 0
+          await deleteExpense(existingExpense.id)
+          
+          // Update local state
+          setExpenses(prev => prev.filter(exp => exp.id !== existingExpense.id))
         } else {
-          // Update amount locally
-          newExpenses[existingIndex] = {
-            ...newExpenses[existingIndex],
-            amount,
+          // Update the expense
+          const updatedExpense = {
+            ...existingExpense,
+            amount
           }
+          await updateExpense(updatedExpense)
+          
+          // Update local state
+          setExpenses(prev => prev.map(exp => 
+            exp.id === existingExpense.id ? updatedExpense : exp
+          ))
         }
       } else if (amount > 0) {
-        // Add new expense locally if amount > 0
-        newExpenses.push({
-          id: `temp-${Date.now()}`, // Temporary ID until saved to Supabase
+        // Add new expense with the sheet_id
+        const newExpense = {
+          id: uuidv4(),
           date: date.toISOString(),
           amount,
           category,
           description: `Expense on ${format(date, "MMM dd")}`,
-        })
-      }
-
-      return newExpenses
-    })
-  }
-
-  // Save expenses to Supabase
-  const handleSave = async () => {
-    setIsSaving(true)
-    try {
-      // Process all unsaved changes
-      const changeKeys = Object.keys(unsavedChanges)
-      
-      for (const key of changeKeys) {
-        const change = unsavedChanges[key]
-        const amount = Number.parseFloat(change.value)
-        
-        if (change.originalExpense) {
-          // Existing expense
-          if (amount === 0) {
-            // Delete the expense
-            await deleteExpense(change.originalExpense.id)
-          } else {
-            // Update the expense
-            await updateExpense({
-              ...change.originalExpense,
-              amount
-            })
-          }
-        } else if (amount > 0) {
-          // New expense
-          await addExpense({
-            id: uuidv4(),
-            date: change.date.toISOString(),
-            amount,
-            category: change.category,
-            description: `Expense on ${format(change.date, "MMM dd")}`,
-          })
+          sheet_id: sheetId, // Associate with the current sheet
         }
+        await addExpense(newExpense, sheetId)
+        
+        // Update local state
+        setExpenses(prev => [...prev, newExpense])
       }
-      
-      // Fetch the updated expenses
-      const updatedExpenses = await getExpenses()
-      setExpenses(updatedExpenses)
-      
-      // Clear unsaved changes
-      setUnsavedChanges({})
-
-      toast({
-        title: "Expenses saved",
-        description: "Your expense data has been saved successfully to Supabase.",
-      })
     } catch (error) {
-      console.error('Error saving expenses:', error)
+      console.error('Error saving expense:', error)
       toast({
         title: "Error",
-        description: "Failed to save expenses. Please try again.",
+        description: "Failed to save expense data. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -161,15 +143,85 @@ export function ExpenseSpreadsheet() {
     }
   }
 
-  // Get expense amount for a specific date and category
-  const getExpenseAmount = (date: Date, category: string): string => {
-    // Check for unsaved changes first
-    const key = `${date.toISOString()}-${category}`
-    if (unsavedChanges[key]) {
-      return unsavedChanges[key].value === "0" ? "" : unsavedChanges[key].value
+  // Add new category
+  const handleAddCategory = () => {
+    if (newCategoryName.trim() === "") {
+      toast({
+        title: "Invalid category name",
+        description: "Please enter a valid category name.",
+        variant: "destructive",
+      })
+      return
     }
 
-    // Otherwise use the expense from state
+    const normalizedName = newCategoryName.trim().toLowerCase()
+
+    if (categories.includes(normalizedName)) {
+      toast({
+        title: "Category already exists",
+        description: "This category already exists. Please use a different name.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    addCategory(normalizedName)
+    setCategories([...categories, normalizedName])
+    setNewCategoryName("")
+    setIsAddCategoryDialogOpen(false)
+
+    toast({
+      title: "Category added",
+      description: `The category "${newCategoryName}" has been added successfully.`,
+    })
+  }
+
+  // Edit category
+  const handleEditCategory = () => {
+    if (categoryToEdit.newName.trim() === "") {
+      toast({
+        title: "Invalid category name",
+        description: "Please enter a valid category name.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const normalizedName = categoryToEdit.newName.trim().toLowerCase()
+
+    if (categories.includes(normalizedName) && normalizedName !== categoryToEdit.oldName) {
+      toast({
+        title: "Category already exists",
+        description: "This category already exists. Please use a different name.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    updateCategoryName(categoryToEdit.oldName, normalizedName)
+    setCategories(categories.map((cat) => (cat === categoryToEdit.oldName ? normalizedName : cat)))
+    setIsEditCategoryDialogOpen(false)
+
+    toast({
+      title: "Category updated",
+      description: `The category has been renamed to "${categoryToEdit.newName}".`,
+    })
+  }
+
+  // Delete category
+  const handleDeleteCategory = () => {
+    removeCategory(categoryToDelete)
+    setCategories(categories.filter((cat) => cat !== categoryToDelete))
+    setIsDeleteCategoryDialogOpen(false)
+
+    toast({
+      title: "Category deleted",
+      description: `The category "${categoryToDelete}" has been deleted.`,
+    })
+  }
+
+  // Get expense amount for a specific date and category
+  const getExpenseAmount = (date: Date, category: string): string => {
     const expense = expenses.find((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
     return expense ? expense.amount.toString() : ""
   }
@@ -188,9 +240,6 @@ export function ExpenseSpreadsheet() {
   const getGrandTotal = (): number => {
     return expenses.reduce((sum, exp) => sum + exp.amount, 0)
   }
-
-  // Categories
-  const categories = ["food", "accessories", "transport", "investment", "others"]
 
   if (isLoading) {
     return (
@@ -256,21 +305,9 @@ export function ExpenseSpreadsheet() {
           </Select>
         </div>
 
-        <Button onClick={handleSave} disabled={isSaving || Object.keys(unsavedChanges).length === 0} className="ml-auto">
-          {isSaving ? (
-            <>
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="mr-2 h-4 w-4" />
-              Save {Object.keys(unsavedChanges).length > 0 ? `(${Object.keys(unsavedChanges).length})` : ''}
-            </>
-          )}
+        <Button variant="outline" onClick={() => setIsAddCategoryDialogOpen(true)}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add Category
         </Button>
       </div>
 
@@ -281,7 +318,37 @@ export function ExpenseSpreadsheet() {
               <TableHead className="w-[120px] sticky left-0 bg-background z-10">Date</TableHead>
               {categories.map((category) => (
                 <TableHead key={category} className="min-w-[120px] capitalize">
-                  {category}
+                  <div className="flex items-center justify-between">
+                    <span>{category}</span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-6 w-6">
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setCategoryToEdit({ oldName: category, newName: category })
+                            setIsEditCategoryDialogOpen(true)
+                          }}
+                        >
+                          <Edit2 className="mr-2 h-4 w-4" />
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setCategoryToDelete(category)
+                            setIsDeleteCategoryDialogOpen(true)
+                          }}
+                          className="text-red-600 focus:text-red-600"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </TableHead>
               ))}
               <TableHead className="min-w-[120px] text-right">Daily Total</TableHead>
@@ -307,6 +374,12 @@ export function ExpenseSpreadsheet() {
                         value={getExpenseAmount(date, category)}
                         onChange={(e) => handleExpenseChange(date, category, e.target.value)}
                       />
+                      {isSaving && <div className="absolute right-2 top-2 h-4 w-4">
+                        <svg className="animate-spin h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      </div>}
                     </div>
                   </TableCell>
                 ))}
@@ -338,6 +411,80 @@ export function ExpenseSpreadsheet() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Add Category Dialog */}
+      <Dialog open={isAddCategoryDialogOpen} onOpenChange={setIsAddCategoryDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Category</DialogTitle>
+            <DialogDescription>Enter a name for your new expense category.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <label htmlFor="category-name">Category Name</label>
+              <Input
+                id="category-name"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="e.g., Entertainment, Insurance"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddCategoryDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddCategory}>Add Category</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Category Dialog */}
+      <Dialog open={isEditCategoryDialogOpen} onOpenChange={setIsEditCategoryDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Category</DialogTitle>
+            <DialogDescription>Enter a new name for the category.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <label htmlFor="edit-category-name">Category Name</label>
+              <Input
+                id="edit-category-name"
+                value={categoryToEdit.newName}
+                onChange={(e) => setCategoryToEdit({ ...categoryToEdit, newName: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditCategoryDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditCategory}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Category Dialog */}
+      <Dialog open={isDeleteCategoryDialogOpen} onOpenChange={setIsDeleteCategoryDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Category</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this category? All expenses in this category will be marked as
+              "uncategorized".
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteCategoryDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteCategory}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

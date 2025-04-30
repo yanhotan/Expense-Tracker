@@ -2,8 +2,8 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { CalendarIcon } from "lucide-react"
 import { format } from "date-fns"
 import { v4 as uuidv4 } from 'uuid'
@@ -18,16 +18,55 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
-import { addExpense } from "@/lib/data"
+import { addExpense, getCategories } from "@/lib/data"
+import { getLastAccessedSheet } from "@/lib/sheets"
 
 export function ExpenseForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [date, setDate] = useState<Date>(new Date())
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const categories = getCategories()
+  const [sheetId, setSheetId] = useState<string | null>(null)
+  
+  // Get sheetId from URL params or last accessed sheet
+  useEffect(() => {
+    const urlSheetId = searchParams.get('sheetId');
+    
+    if (urlSheetId) {
+      setSheetId(urlSheetId);
+    } else {
+      // If no sheet ID in URL, try to get last accessed sheet
+      const lastSheet = getLastAccessedSheet();
+      setSheetId(lastSheet);
+      
+      // If no last sheet found, redirect to sheet selector
+      if (!lastSheet) {
+        toast({
+          title: "No sheet selected",
+          description: "Please select an expense sheet first.",
+          variant: "destructive",
+        });
+        router.push("/"); // Redirect to home/sheet selector
+      }
+    }
+  }, [searchParams, router]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setIsSubmitting(true)
+
+    // Check if we have a valid sheet ID
+    if (!sheetId) {
+      toast({
+        title: "No sheet selected",
+        description: "Please select an expense sheet first.",
+        variant: "destructive",
+      });
+      setIsSubmitting(false);
+      router.push("/"); // Redirect to home/sheet selector
+      return;
+    }
 
     const formData = new FormData(event.currentTarget)
     const amount = Number.parseFloat(formData.get("amount") as string)
@@ -51,7 +90,8 @@ export function ExpenseForm() {
         amount,
         category,
         description,
-      })
+        sheet_id: sheetId,
+      }, sheetId);
 
       toast({
         title: "Expense added",
@@ -95,16 +135,16 @@ export function ExpenseForm() {
 
           <div className="space-y-2">
             <Label htmlFor="category">Category</Label>
-            <Select name="category" required defaultValue="food">
+            <Select name="category" required defaultValue={categories[0]}>
               <SelectTrigger id="category">
                 <SelectValue placeholder="Select a category" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="food">Food</SelectItem>
-                <SelectItem value="accessories">Accessories</SelectItem>
-                <SelectItem value="transport">Fuel/Transport</SelectItem>
-                <SelectItem value="investment">Investment</SelectItem>
-                <SelectItem value="others">Others</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category.charAt(0).toUpperCase() + category.slice(1)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

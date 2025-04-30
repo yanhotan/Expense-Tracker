@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/components/ui/use-toast"
-import { type Expense, deleteExpense, updateExpense } from "@/lib/data"
+import { type Expense, deleteExpense, updateExpense, getCategoryColor, getCategories } from "@/lib/data"
 import { useRouter } from "next/navigation"
 
 interface ExpenseTableProps {
@@ -112,17 +112,6 @@ export function ExpenseTable({ expenses }: ExpenseTableProps) {
         setIsSubmitting(false)
       }
     }
-  }
-
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      food: "bg-green-100 text-green-800",
-      accessories: "bg-purple-100 text-purple-800",
-      transport: "bg-blue-100 text-blue-800",
-      investment: "bg-amber-100 text-amber-800",
-      others: "bg-gray-100 text-gray-800",
-    }
-    return colors[category] || colors.others
   }
 
   const formatCurrency = (amount: number) => {
@@ -259,11 +248,11 @@ export function ExpenseTable({ expenses }: ExpenseTableProps) {
                   <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="food">Food</SelectItem>
-                  <SelectItem value="accessories">Accessories</SelectItem>
-                  <SelectItem value="transport">Fuel/Transport</SelectItem>
-                  <SelectItem value="investment">Investment</SelectItem>
-                  <SelectItem value="others">Others</SelectItem>
+                  {getCategories().map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category.charAt(0).toUpperCase() + category.slice(1)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
