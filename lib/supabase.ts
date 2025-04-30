@@ -7,6 +7,18 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 // Create a single supabase client for interacting with your database
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// Function to execute the database setup script
+export const executeSetupScript = async (supabaseClient: typeof supabase) => {
+  try {
+    const { error } = await supabaseClient.rpc('exec_sql', { sql: setupSchema });
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error('Error executing setup script:', error);
+    return { success: false, error };
+  }
+};
+
 // Function to get the current user ID
 export const getCurrentUserId = async (): Promise<string> => {
   try {
@@ -222,20 +234,22 @@ CREATE OR REPLACE FUNCTION public.get_current_month_total(user_uuid UUID, sheet_
 RETURNS NUMERIC AS $$
 DECLARE
     total_amount NUMERIC;
+    current_month INTEGER := EXTRACT(MONTH FROM CURRENT_DATE);
+    current_year INTEGER := EXTRACT(YEAR FROM CURRENT_DATE);
 BEGIN
     IF sheet_uuid IS NULL THEN
         SELECT COALESCE(SUM(amount), 0) INTO total_amount
         FROM public.expenses
         WHERE user_id = user_uuid
-        AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
-        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE);
+        AND EXTRACT(MONTH FROM date) = current_month
+        AND EXTRACT(YEAR FROM date) = current_year;
     ELSE
         SELECT COALESCE(SUM(amount), 0) INTO total_amount
         FROM public.expenses
         WHERE user_id = user_uuid
         AND sheet_id = sheet_uuid
-        AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
-        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE);
+        AND EXTRACT(MONTH FROM date) = current_month
+        AND EXTRACT(YEAR FROM date) = current_year;
     END IF;
     
     RETURN total_amount;
@@ -302,15 +316,3 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 `;
-
-export async function executeSetupScript(client: typeof supabase) {
-  try {
-    const { error } = await client.rpc('exec', { sql: setupSchema });
-    if (error) throw error;
-    console.log('Database schema setup complete');
-    return { success: true };
-  } catch (error) {
-    console.error('Error setting up database schema:', error);
-    return { success: false, error };
-  }
-}
