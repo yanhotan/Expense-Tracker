@@ -45,7 +45,7 @@ try {
 // Install dependencies with npm
 try {
   console.log('📦 Installing dependencies with npm...');
-  execSync('npm install --legacy-peer-deps', { stdio: 'inherit' });
+  execSync('npm install --legacy-peer-deps --include=dev', { stdio: 'inherit' });
   console.log('✅ Dependencies installed successfully');
 } catch (error) {
   console.error('❌ Error installing dependencies:', error.message);

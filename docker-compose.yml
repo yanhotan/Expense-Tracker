@@ -1,17 +1,21 @@
 version: '3'
 
 services:
-  expense-tracker:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: always
     ports:
       - "3000:3000"
-    volumes:
-      - .:/app
-      - /app/node_modules
-      - /app/.next
     environment:
-      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-    restart: unless-stopped
+      - NODE_ENV=production
+      # Add your environment variables here
+      - NEXT_PUBLIC_SUPABASE_URL=https://kvztrixrtsbtymwewkuo.supabase.co
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2enRyaXhydHNidHltd2V3a3VvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU4MjMyMDYsImV4cCI6MjA2MTM5OTIwNn0.r8VwAhLN0QHsBVgeZyv-lzBSlhpXAhUjJnMAakQ8tDk
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

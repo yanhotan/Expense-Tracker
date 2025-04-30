@@ -1,25 +1,44 @@
-# Base on official Node.js Alpine image
-FROM node:20-alpine
+FROM node:20-alpine AS base
 
-# Set working directory
+# Install dependencies only when needed
+FROM base AS deps
+WORKDIR /app
+COPY package.json ./
+# Use npm install instead of npm ci to generate a fresh lockfile
+RUN npm install --legacy-peer-deps
+
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/package-lock.json ./package-lock.json
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED 1
+
+RUN npm run build
+
+# Production image, copy all the files and run next
+FROM base AS runner
 WORKDIR /app
 
-# Set environment variables
-ENV NODE_ENV=development
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED 1
 
-# Install dependencies first (for better caching)
-COPY package.json package-lock.json* .npmrc ./
-RUN npm install
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-# Copy all files
-COPY . .
+COPY --from=builder /app/public ./public
 
-# Build the Next.js application for production
-# If you want to use the development server instead, comment out the next two lines
-# RUN npm run build
-# CMD ["npm", "start"]
+# Automatically leverage output traces to reduce image size
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Use development server for easy debugging and hot reload
+USER nextjs
+
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
+
+ENV PORT 3000
+ENV HOSTNAME "0.0.0.0"
+
+# server.js is created by next build from the standalone output
+CMD ["node", "server.js"]
