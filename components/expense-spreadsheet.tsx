@@ -35,10 +35,18 @@ import {
 } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
-export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
+export function ExpenseSpreadsheet({ 
+  sheetId, 
+  currentMonth: externalCurrentMonth,
+  onMonthChange 
+}: { 
+  sheetId: string,
+  currentMonth?: Date,
+  onMonthChange?: (date: Date) => void
+}) {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<string[]>([])
-  const [currentMonth, setCurrentMonth] = useState<Date>(new Date())
+  const [currentMonth, setCurrentMonth] = useState<Date>(externalCurrentMonth || new Date())
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isAddCategoryDialogOpen, setIsAddCategoryDialogOpen] = useState(false)
@@ -91,6 +99,13 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
 
     loadExpenses()
   }, [sheetId]) // Re-run when sheet changes
+
+  // Sync with external current month prop when it changes
+  useEffect(() => {
+    if (externalCurrentMonth) {
+      setCurrentMonth(externalCurrentMonth)
+    }
+  }, [externalCurrentMonth])
 
   // Create a debounced save function for auto-saving
   const debouncedSaveExpense = useCallback(
@@ -487,6 +502,10 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
               const newDate = new Date(currentMonth)
               newDate.setMonth(Number.parseInt(value))
               setCurrentMonth(newDate)
+              // Notify parent component about month change
+              if (onMonthChange) {
+                onMonthChange(newDate)
+              }
             }}
           >
             <SelectTrigger className="w-[180px]">
@@ -507,6 +526,10 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
               const newDate = new Date(currentMonth)
               newDate.setFullYear(Number.parseInt(value))
               setCurrentMonth(newDate)
+              // Notify parent component about month change
+              if (onMonthChange) {
+                onMonthChange(newDate)
+              }
             }}
           >
             <SelectTrigger className="w-[120px]">

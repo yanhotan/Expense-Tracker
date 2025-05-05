@@ -14,6 +14,7 @@ export default function Home() {
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null)
   const [sheetName, setSheetName] = useState<string>("")
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [selectedMonth, setSelectedMonth] = useState<Date>(new Date())
   
   useEffect(() => {
     // Check for a previously selected sheet on load
@@ -52,6 +53,11 @@ export default function Home() {
     // Increment refresh trigger to ensure sheet selector reloads data
     setRefreshTrigger(prev => prev + 1)
   }
+
+  // Handle month change from the spreadsheet component
+  const handleMonthChange = (date: Date) => {
+    setSelectedMonth(date)
+  }
   
   return (
     <div className="container mx-auto py-6 px-4">
@@ -75,12 +81,19 @@ export default function Home() {
           </div>
           
           <div className="mb-8">
-            <ExpenseSpreadsheet sheetId={selectedSheet} />
+            <ExpenseSpreadsheet 
+              sheetId={selectedSheet} 
+              currentMonth={selectedMonth}
+              onMonthChange={handleMonthChange}
+            />
           </div>
 
           <div className="mt-12">
             <h2 className="text-2xl font-bold mb-4">Expense Analysis</h2>
-            <ExpenseCharts sheetId={selectedSheet} />
+            <ExpenseCharts 
+              sheetId={selectedSheet} 
+              selectedMonth={selectedMonth}
+            />
           </div>
         </>
       )}
