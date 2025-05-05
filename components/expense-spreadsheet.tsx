@@ -25,6 +25,7 @@ import {
   getSheetCategories,
   saveSheetCategories
 } from "@/lib/data"
+import { getCurrentUserId } from "@/lib/supabase"
 import {
   Dialog,
   DialogContent,
@@ -134,6 +135,9 @@ export function ExpenseSpreadsheet({
     const inputKey = `${date.toISOString()}-${category}`;
     const value = inputValues[inputKey] || "";
     
+    // Cancel any ongoing debounced save operations to avoid conflicts
+    debouncedSaveExpense.cancel();
+    
     // Mark this cell as saving
     setSavingCells(prev => ({
       ...prev,
@@ -145,6 +149,10 @@ export function ExpenseSpreadsheet({
       if (isNaN(amount)) {
         // Invalid number input, revert to previous value
         console.log("Invalid number input, ignoring save");
+        setSavingCells(prev => ({
+          ...prev,
+          [inputKey]: false
+        }));
         return;
       }
       
@@ -155,6 +163,8 @@ export function ExpenseSpreadsheet({
         date.getDate(),
         12, 0, 0 // Set to noon to avoid timezone issues
       ).toISOString();
+      
+      console.log(`Saving expense for ${category} on ${format(date, "MMM dd")}: $${amount}`);
 
       // New approach: First find ALL expenses for this date and category (to handle duplicates)
       const matchingExpenses = expenses.filter(
@@ -191,7 +201,7 @@ export function ExpenseSpreadsheet({
             console.log(`Deleted duplicate expense: ${dupe.id}`);
           }
           
-          // Update expenses array in state
+          // Update expenses array in state - IMPORTANT: Do this BEFORE adding any new expenses
           setExpenses(prev => prev.filter(exp => !sorted.slice(1).some(dupe => dupe.id === exp.id)));
           
           // Continue with the primary expense
@@ -208,9 +218,11 @@ export function ExpenseSpreadsheet({
               ...primaryExpense,
               amount
             };
+            
+            // Important: await the update to ensure it completes before returning
             await updateExpense(updatedExpense);
             
-            // Update local state immediately
+            // Update local state immediately - replace the old expense with updated one
             setExpenses(prev => prev.map(exp => 
               exp.id === primaryExpense.id ? updatedExpense : exp
             ));
@@ -233,9 +245,11 @@ export function ExpenseSpreadsheet({
               ...existingExpense,
               amount
             };
+            
+            // Important: await the update to ensure it completes
             await updateExpense(updatedExpense);
             
-            // Update local state immediately
+            // Update local state immediately - replace the existing expense
             setExpenses(prev => prev.map(exp => 
               exp.id === existingExpense.id ? updatedExpense : exp
             ));
@@ -243,7 +257,7 @@ export function ExpenseSpreadsheet({
           }
         }
       } else if (amount !== 0) {
-        // Add new expense with the sheet_id (now handling both positive and negative values)
+        // Create new expense with the sheet_id
         const newExpense = {
           id: uuidv4(),
           date: dateISO,
@@ -253,29 +267,37 @@ export function ExpenseSpreadsheet({
             ? `Expense on ${format(date, "MMM dd")}` 
             : `Income/Return on ${format(date, "MMM dd")}`,
           sheet_id: sheetId,
+          user_id: await getCurrentUserId(),
+          created_at: new Date().toISOString()
         };
         
-        // First update local state immediately (optimistic update)
-        setExpenses(prev => [...prev, newExpense]);
-        console.log(`Added new ${amount > 0 ? 'expense' : 'income/return'} for ${category} on ${format(date, "MMM dd")}: $${amount}`);
-        
-        // Then save to database with retries
+        // Save to database first (to prevent double saving)
         const saved = await addExpense(newExpense, sheetId);
         
-        // If failed to save to database after retries, show a toast notification
-        if (!saved) {
+        if (saved) {
+          // Only update state AFTER successful save to prevent duplicate entries
+          setExpenses(prev => [...prev, newExpense]);
+          console.log(`Added new ${amount > 0 ? 'expense' : 'income/return'} for ${category} on ${format(date, "MMM dd")}: $${amount}`);
+        } else {
           toast({
             title: "Warning",
-            description: "Data saved locally but not yet to database. Will retry when connection improves.",
+            description: "Failed to save expense to database. Please try again.",
             variant: "default",
           });
         }
       }
+      
+      // After successful save/update, clear the input value from local state
+      setInputValues(prev => ({
+        ...prev,
+        [inputKey]: undefined
+      }));
+      
     } catch (error) {
       console.error('Error saving expense:', error);
       toast({
         title: "Error",
-        description: "Failed to save expense data. Your changes have been stored locally and will sync later.",
+        description: "Failed to save expense data. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -439,14 +461,26 @@ export function ExpenseSpreadsheet({
 
   // Calculate daily totals - fixed to avoid double counting
   const getDailyTotal = (date: Date): number => {
-    // Get all expenses for this date from the main expenses array
-    const dayExpenses = expenses.filter((exp) => isSameDay(new Date(exp.date), date));
+    // First verify that we're working with expenses from the correct month
+    // This prevents double counting from different months
+    const monthFiltered = expenses.filter((exp) => {
+      const expenseDate = new Date(exp.date);
+      return expenseDate.getMonth() === currentMonth.getMonth() && 
+             expenseDate.getFullYear() === currentMonth.getFullYear();
+    });
     
-    // Create a Map to only count one expense per category for this date
+    // Then filter for the specific date
+    const dayExpenses = monthFiltered.filter((exp) => {
+      const expDate = new Date(exp.date);
+      return expDate.getDate() === date.getDate();
+    });
+    
+    // Create a Map to ensure we only count one expense per category for this date
     const categoryAmounts = new Map<string, number>();
     
-    // Loop through each saved expense and update the map
+    // Loop through each expense and update the map with the most recent value
     dayExpenses.forEach(exp => {
+      // If multiple expenses exist for same category, the last one processed will be used
       categoryAmounts.set(exp.category, exp.amount);
     });
     
@@ -456,21 +490,61 @@ export function ExpenseSpreadsheet({
 
   // Calculate category totals for the current month only
   const getCategoryTotal = (category: string): number => {
-    return expenses.filter((exp) => {
+    // First get all expenses for this category in the current month
+    const categoryExpenses = expenses.filter((exp) => {
       const expenseDate = new Date(exp.date);
       return exp.category === category && 
              expenseDate.getMonth() === currentMonth.getMonth() && 
              expenseDate.getFullYear() === currentMonth.getFullYear();
-    }).reduce((sum, exp) => sum + exp.amount, 0);
+    });
+    
+    // Group expenses by date to avoid double counting
+    const dateGroupedExpenses = new Map<string, Expense>();
+    
+    categoryExpenses.forEach(expense => {
+      const expDate = new Date(expense.date);
+      const dateKey = `${expDate.getFullYear()}-${expDate.getMonth()}-${expDate.getDate()}`;
+      
+      // If we already have an expense for this date, only update if this one is newer
+      const existing = dateGroupedExpenses.get(dateKey);
+      if (!existing || (expense.created_at && existing.created_at && 
+          new Date(expense.created_at) > new Date(existing.created_at))) {
+        dateGroupedExpenses.set(dateKey, expense);
+      }
+    });
+    
+    // Sum up only one expense per date
+    return Array.from(dateGroupedExpenses.values())
+      .reduce((sum, exp) => sum + exp.amount, 0);
   }
 
   // Calculate grand total for the current month only
   const getGrandTotal = (): number => {
-    return expenses.filter((exp) => {
+    // Filter expenses for current month
+    const monthExpenses = expenses.filter((exp) => {
       const expenseDate = new Date(exp.date);
       return expenseDate.getMonth() === currentMonth.getMonth() && 
              expenseDate.getFullYear() === currentMonth.getFullYear();
-    }).reduce((sum, exp) => sum + exp.amount, 0);
+    });
+    
+    // Group expenses by date and category to avoid double counting
+    const uniqueExpenseMap = new Map<string, Expense>();
+    
+    monthExpenses.forEach(expense => {
+      const expDate = new Date(expense.date);
+      const mapKey = `${expDate.getFullYear()}-${expDate.getMonth()}-${expDate.getDate()}-${expense.category}`;
+      
+      // If we already have an expense for this date+category combo, only update if this one is newer
+      const existing = uniqueExpenseMap.get(mapKey);
+      if (!existing || (expense.created_at && existing.created_at && 
+          new Date(expense.created_at) > new Date(existing.created_at))) {
+        uniqueExpenseMap.set(mapKey, expense);
+      }
+    });
+    
+    // Calculate total from unique expenses only
+    return Array.from(uniqueExpenseMap.values())
+      .reduce((sum, exp) => sum + exp.amount, 0);
   }
 
   // Format currency with proper color styling based on value
