@@ -454,14 +454,23 @@ export function ExpenseSpreadsheet({
     return Array.from(categoryAmounts.values()).reduce((sum, amount) => sum + amount, 0);
   }
 
-  // Calculate category totals
+  // Calculate category totals for the current month only
   const getCategoryTotal = (category: string): number => {
-    return expenses.filter((exp) => exp.category === category).reduce((sum, exp) => sum + exp.amount, 0)
+    return expenses.filter((exp) => {
+      const expenseDate = new Date(exp.date);
+      return exp.category === category && 
+             expenseDate.getMonth() === currentMonth.getMonth() && 
+             expenseDate.getFullYear() === currentMonth.getFullYear();
+    }).reduce((sum, exp) => sum + exp.amount, 0);
   }
 
-  // Calculate grand total
+  // Calculate grand total for the current month only
   const getGrandTotal = (): number => {
-    return expenses.reduce((sum, exp) => sum + exp.amount, 0)
+    return expenses.filter((exp) => {
+      const expenseDate = new Date(exp.date);
+      return expenseDate.getMonth() === currentMonth.getMonth() && 
+             expenseDate.getFullYear() === currentMonth.getFullYear();
+    }).reduce((sum, exp) => sum + exp.amount, 0);
   }
 
   // Format currency with proper color styling based on value
