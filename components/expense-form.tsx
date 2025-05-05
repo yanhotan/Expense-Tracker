@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
-import { addExpense, getCategories } from "@/lib/data"
+import { addExpense, getCategories, getSheetCategories } from "@/lib/data"
 import { getLastAccessedSheet } from "@/lib/sheets"
 
 // Separate component that uses useSearchParams
@@ -27,30 +27,55 @@ function ExpenseFormContent() {
   const searchParams = useSearchParams()
   const [date, setDate] = useState<Date>(new Date())
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const categories = getCategories()
   const [sheetId, setSheetId] = useState<string | null>(null)
+  const [categories, setCategories] = useState<string[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   
   // Get sheetId from URL params or last accessed sheet
   useEffect(() => {
-    const urlSheetId = searchParams.get('sheetId');
-    
-    if (urlSheetId) {
-      setSheetId(urlSheetId);
-    } else {
-      // If no sheet ID in URL, try to get last accessed sheet
-      const lastSheet = getLastAccessedSheet();
-      setSheetId(lastSheet);
+    async function loadData() {
+      setIsLoading(true);
+      const urlSheetId = searchParams.get('sheetId');
       
-      // If no last sheet found, redirect to sheet selector
-      if (!lastSheet) {
-        toast({
-          title: "No sheet selected",
-          description: "Please select an expense sheet first.",
-          variant: "destructive",
-        });
-        router.push("/"); // Redirect to home/sheet selector
+      if (urlSheetId) {
+        setSheetId(urlSheetId);
+        // Get sheet-specific categories from database
+        try {
+          const dbCategories = await getSheetCategories(urlSheetId);
+          setCategories(dbCategories);
+        } catch (error) {
+          console.error("Failed to load categories:", error);
+          // Fallback to localStorage categories
+          setCategories(getCategories(urlSheetId));
+        }
+      } else {
+        // If no sheet ID in URL, try to get last accessed sheet
+        const lastSheet = getLastAccessedSheet();
+        if (lastSheet) {
+          setSheetId(lastSheet);
+          // Get sheet-specific categories for the last sheet from database
+          try {
+            const dbCategories = await getSheetCategories(lastSheet);
+            setCategories(dbCategories);
+          } catch (error) {
+            console.error("Failed to load categories:", error);
+            // Fallback to localStorage categories
+            setCategories(getCategories(lastSheet));
+          }
+        } else {
+          // If no last sheet found, redirect to sheet selector
+          toast({
+            title: "No sheet selected",
+            description: "Please select an expense sheet first.",
+            variant: "destructive",
+          });
+          router.push("/"); // Redirect to home/sheet selector
+        }
       }
+      setIsLoading(false);
     }
+    
+    loadData();
   }, [searchParams, router]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -99,8 +124,8 @@ function ExpenseFormContent() {
         description: "Your expense has been recorded successfully.",
       })
 
-      router.push("/expenses")
-      router.refresh()
+      // Forcibly reload the page to ensure data is fresh
+      window.location.href = "/expenses";
     } catch (error) {
       console.error('Error adding expense:', error)
       toast({
