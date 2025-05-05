@@ -272,6 +272,130 @@ export async function getExpenseSheets(): Promise<ExpenseSheet[]> {
   return allSheets;
 }
 
+// Update an existing expense sheet's name
+export async function updateSheetName(sheetId: string, newName: string): Promise<boolean> {
+  // During SSR or build, don't try to update
+  if (isServerRendering()) {
+    return false;
+  }
+
+  // Get the current authenticated user ID
+  const user_id = await getCurrentUserId();
+  console.log(`Updating sheet ${sheetId} name to "${newName}", user: ${user_id}`);
+  
+  let dbSuccess = false;
+  let localSuccess = false;
+
+  // Update in Supabase with retry mechanism
+  if (user_id !== '00000000-0000-0000-0000-000000000000') {
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries && !dbSuccess) {
+      try {
+        console.log(`Attempt ${retryCount + 1} to update sheet name in database`);
+        
+        // First check if the sheet exists and belongs to the user
+        const { data: sheetData, error: checkError } = await supabase
+          .from('expense_sheets')
+          .select('*')
+          .eq('id', sheetId)
+          .single();
+        
+        if (checkError) {
+          console.warn(`Error checking sheet existence (attempt ${retryCount + 1}):`, checkError);
+          retryCount++;
+          await new Promise(resolve => setTimeout(resolve, 500));
+          continue;
+        }
+        
+        console.log('Found sheet in database:', sheetData ? 'yes' : 'no');
+        
+        // If sheet exists, update it
+        if (sheetData) {
+          const { error: updateError } = await supabase
+            .from('expense_sheets')
+            .update({ name: newName })
+            .eq('id', sheetId);
+
+          if (updateError) {
+            console.warn(`Error updating sheet name (attempt ${retryCount + 1}):`, updateError);
+            retryCount++;
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            console.log('Sheet name updated successfully in database');
+            dbSuccess = true;
+            break;
+          }
+        } else {
+          // Sheet not found in database, try to insert it
+          console.log('Sheet not found in database, creating it');
+          
+          // Get sheet data from localStorage
+          const key = `expense-tracker-sheet-${sheetId}`;
+          const sheetDataStr = localStorage.getItem(key);
+          
+          if (sheetDataStr) {
+            const localSheetData = JSON.parse(sheetDataStr);
+            
+            // Create the sheet in the database
+            const { error: insertError } = await supabase
+              .from('expense_sheets')
+              .insert({
+                id: sheetId,
+                name: newName, // Use the new name
+                pin: localSheetData.pin || null,
+                has_pin: !!localSheetData.pin || localSheetData.hasPin || false,
+                created_at: localSheetData.created || new Date().toISOString(),
+                user_id: user_id
+              });
+              
+            if (insertError) {
+              console.warn(`Error inserting sheet into database (attempt ${retryCount + 1}):`, insertError);
+              retryCount++;
+              await new Promise(resolve => setTimeout(resolve, 500));
+            } else {
+              console.log('Sheet created successfully in database');
+              dbSuccess = true;
+              break;
+            }
+          } else {
+            console.warn('Sheet not found in localStorage either');
+            retryCount++;
+          }
+        }
+      } catch (error) {
+        console.error(`Exception while updating sheet name (attempt ${retryCount + 1}):`, error);
+        retryCount++;
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+  } else {
+    console.warn('Cannot update database: no authenticated user');
+  }
+
+  // Always update localStorage regardless of database result
+  try {
+    const key = `expense-tracker-sheet-${sheetId}`;
+    const sheetDataStr = localStorage.getItem(key);
+    
+    if (sheetDataStr) {
+      const sheetData = JSON.parse(sheetDataStr);
+      sheetData.name = newName;
+      localStorage.setItem(key, JSON.stringify(sheetData));
+      console.log('Sheet name updated in localStorage');
+      localSuccess = true;
+    } else {
+      console.warn('Sheet not found in localStorage');
+    }
+  } catch (localError) {
+    console.error('Error updating sheet name in localStorage:', localError);
+  }
+
+  // If at least one update method succeeded
+  return dbSuccess || localSuccess;
+}
+
 // Save a consistent format in localStorage to fix sheet detection
 export async function createExpenseSheet(sheet: { name: string; pin?: string }): Promise<ExpenseSheet | null> {
   // Get the current authenticated user ID

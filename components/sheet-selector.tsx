@@ -6,9 +6,10 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "@/components/ui/use-toast"
-import { LockIcon, UnlockIcon, UserIcon, PlusCircle } from "lucide-react"
-import { getExpenseSheets, verifySheetPin, setLastAccessedSheet, getLastAccessedSheet, createExpenseSheet, type ExpenseSheet } from "@/lib/sheets"
-import { supabase, getCurrentUserId } from "@/lib/supabase" // Import the supabase client and getCurrentUserId
+import { LockIcon, UnlockIcon, UserIcon, PlusCircle, Edit, MoreVertical } from "lucide-react"
+import { getExpenseSheets, verifySheetPin, setLastAccessedSheet, getLastAccessedSheet, createExpenseSheet, updateSheetName, type ExpenseSheet } from "@/lib/sheets"
+import { supabase, getCurrentUserId } from "@/lib/supabase"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 
 export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: string) => void }) {
   const [availableSheets, setAvailableSheets] = useState<ExpenseSheet[]>([])
@@ -20,6 +21,11 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
   const [newSheetName, setNewSheetName] = useState("")
   const [newSheetPin, setNewSheetPin] = useState("")
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  
+  // State for sheet name editing
+  const [editNameDialogOpen, setEditNameDialogOpen] = useState(false)
+  const [sheetToEdit, setSheetToEdit] = useState<ExpenseSheet | null>(null)
+  const [editedSheetName, setEditedSheetName] = useState("")
   
   // Load available sheets from Supabase
   useEffect(() => {
@@ -338,6 +344,66 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
     }
   }
   
+  // Handle showing the edit sheet name dialog
+  const handleOpenEditSheet = (e: React.MouseEvent<HTMLDivElement>, sheet: ExpenseSheet) => {
+    e.stopPropagation(); // Prevent sheet selection when clicking the edit button
+    setSheetToEdit(sheet);
+    setEditedSheetName(sheet.name);
+    setEditNameDialogOpen(true);
+  }
+  
+  // Handle saving the edited sheet name
+  const handleSaveSheetName = async () => {
+    if (!sheetToEdit) return;
+    
+    if (!editedSheetName.trim()) {
+      toast({
+        title: "Invalid name",
+        description: "Please enter a valid name for your sheet",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const success = await updateSheetName(sheetToEdit.id, editedSheetName.trim());
+      
+      if (success) {
+        toast({
+          title: "Sheet renamed",
+          description: `Sheet name updated to "${editedSheetName}"`,
+        });
+        
+        // Update the sheets list locally to reflect the name change
+        setAvailableSheets(prev => 
+          prev.map(s => s.id === sheetToEdit.id ? { ...s, name: editedSheetName } : s)
+        );
+        
+        // If this is the selected sheet, update that too
+        if (selectedSheet?.id === sheetToEdit.id) {
+          setSelectedSheet({ ...selectedSheet, name: editedSheetName });
+        }
+        
+        // Close the dialog
+        setEditNameDialogOpen(false);
+        setSheetToEdit(null);
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to rename sheet. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error updating sheet name:', error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while renaming the sheet.",
+        variant: "destructive",
+      });
+    }
+  }
+  
   if (isLoading) {
     return (
       <Card>
@@ -395,15 +461,32 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
                       <UserIcon className="h-4 w-4 mr-2" />
                       {sheet.name}
                     </div>
-                    {sheet.has_pin ? (
-                      <div title="PIN protected">
-                        <LockIcon className="h-4 w-4 text-amber-500" />
+                    <div className="flex items-center space-x-2">
+                      {sheet.has_pin ? (
+                        <div title="PIN protected">
+                          <LockIcon className="h-4 w-4 text-amber-500" />
+                        </div>
+                      ) : (
+                        <div title="No PIN protection">
+                          <UnlockIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={(e) => handleOpenEditSheet(e, sheet)}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit Name
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-                    ) : (
-                      <div title="No PIN protection">
-                        <UnlockIcon className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    )}
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardFooter className="pt-2 text-xs text-muted-foreground">
@@ -489,6 +572,42 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
           <DialogFooter>
             <Button type="submit" onClick={handleCreateSheet}>
               Create Sheet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Dialog for editing sheet name */}
+      <Dialog open={editNameDialogOpen} onOpenChange={setEditNameDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Sheet Name</DialogTitle>
+            <DialogDescription>
+              Update the name of your expense sheet.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="edit-name" className="text-right">
+                Name
+              </label>
+              <Input
+                id="edit-name"
+                className="col-span-3"
+                placeholder="Enter new sheet name"
+                value={editedSheetName}
+                onChange={(e) => setEditedSheetName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSaveSheetName()}
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditNameDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" onClick={handleSaveSheetName}>
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
