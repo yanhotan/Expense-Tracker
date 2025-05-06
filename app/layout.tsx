@@ -5,13 +5,14 @@ import "./globals.css"
 
 import { Toaster } from "@/components/ui/toaster"
 import { ThemeProvider } from "@/components/theme-provider"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Excel-Style Expense Tracker",
-  description: "Track and visualize your monthly expenses in a spreadsheet format",
-    generator: 'v0.dev'
+  title: "Expense Tracker",
+  description: "Track and manage your expenses easily",
+  generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -23,7 +24,13 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          {children}
+          <div className="relative min-h-screen">
+            {/* Theme toggle button positioned at the top-right */}
+            <div className="absolute right-4 top-4 z-50">
+              <ThemeToggle />
+            </div>
+            {children}
+          </div>
           <Toaster />
         </ThemeProvider>
       </body>

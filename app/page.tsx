@@ -58,10 +58,17 @@ export default function Home() {
   const handleMonthChange = (date: Date) => {
     setSelectedMonth(date)
   }
+
+  const handleRefresh = () => {
+    // Increment refresh trigger to force reload
+    setRefreshTrigger(prev => prev + 1)
+  }
   
   return (
-    <div className="container mx-auto py-6 px-4">
-      <h1 className="text-3xl font-bold mb-6">Monthly Expense Tracker</h1>
+    <div className="container mx-auto py-6 px-4 sm:px-6">
+      <h1 className="text-2xl sm:text-3xl font-bold mb-6 flex items-center justify-between">
+        <span>Monthly Expense Tracker</span>
+      </h1>
       
       {!selectedSheet ? (
         <div className="mb-8">
@@ -69,31 +76,51 @@ export default function Home() {
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Expense Sheet: {sheetName}</h2>
-            <Button 
-              onClick={handleSwitchSheet}
-              variant="outline"
-              className="text-sm"
-            >
-              Switch Sheet
-            </Button>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
+            <h2 className="text-lg sm:text-xl font-semibold">Expense Sheet: {sheetName}</h2>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button 
+                onClick={handleRefresh}
+                variant="outline"
+                className="text-sm flex-1 sm:flex-none"
+              >
+                <svg className="mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
+                </svg>
+                Refresh
+              </Button>
+              <Button 
+                onClick={handleSwitchSheet}
+                variant="outline"
+                className="text-sm flex-1 sm:flex-none"
+              >
+                Switch Sheet
+              </Button>
+            </div>
           </div>
           
-          <div className="mb-8">
-            <ExpenseSpreadsheet 
-              sheetId={selectedSheet} 
-              currentMonth={selectedMonth}
-              onMonthChange={handleMonthChange}
-            />
+          <div className="mb-8 overflow-x-auto">
+            <div className="min-w-full">
+              <ExpenseSpreadsheet 
+                sheetId={selectedSheet} 
+                currentMonth={selectedMonth}
+                onMonthChange={handleMonthChange}
+                key={`spreadsheet-${refreshTrigger}`}
+              />
+            </div>
           </div>
 
-          <div className="mt-12">
-            <h2 className="text-2xl font-bold mb-4">Expense Analysis</h2>
-            <ExpenseCharts 
-              sheetId={selectedSheet} 
-              selectedMonth={selectedMonth}
-            />
+          <div className="mt-8 sm:mt-12">
+            <h2 className="text-xl sm:text-2xl font-bold mb-4">Expense Analysis</h2>
+            <div className="overflow-x-auto">
+              <div className="min-w-full">
+                <ExpenseCharts 
+                  sheetId={selectedSheet} 
+                  selectedMonth={selectedMonth}
+                  key={`charts-${refreshTrigger}`}
+                />
+              </div>
+            </div>
           </div>
         </>
       )}

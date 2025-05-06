@@ -6,11 +6,11 @@ import { useState, useEffect } from "react"
 
 import { Button } from "@/components/ui/button"
 import { ExpenseTable } from "@/components/expense-table"
-import { getExpenses, Expense } from "@/lib/data" // Import the Expense type
+import { getExpenses, Expense } from "@/lib/data"
 import { getLastAccessedSheet } from "@/lib/sheets"
 
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState<Expense[]>([]) // Properly type the expenses state
+  const [expenses, setExpenses] = useState<Expense[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [sheetId, setSheetId] = useState<string | null>(null)
 
@@ -18,7 +18,6 @@ export default function ExpensesPage() {
     async function loadExpenses() {
       setIsLoading(true)
       try {
-        // Get the last accessed sheet
         const lastSheet = getLastAccessedSheet()
         setSheetId(lastSheet)
         
@@ -26,7 +25,6 @@ export default function ExpensesPage() {
           const data = await getExpenses(lastSheet)
           setExpenses(data)
         } else {
-          // If no sheet is selected, show an empty list
           setExpenses([])
         }
       } catch (error) {
@@ -40,18 +38,18 @@ export default function ExpensesPage() {
   }, [])
 
   return (
-    <div className="container mx-auto py-10">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold">
+    <div className="container mx-auto py-6 px-4 sm:px-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+        <h1 className="text-2xl sm:text-3xl font-bold">
           {isLoading ? 'Loading expenses...' : 'All Expenses'}
           {!isLoading && !sheetId && ' (No sheet selected)'}
         </h1>
-        <div className="flex gap-4">
-          <Link href="/">
-            <Button variant="outline">Dashboard</Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Link href="/" className="flex-1 sm:flex-none">
+            <Button variant="outline" className="w-full sm:w-auto">Dashboard</Button>
           </Link>
-          <Link href={sheetId ? `/expenses/add?sheetId=${sheetId}` : "/"}>
-            <Button>
+          <Link href={sheetId ? `/expenses/add?sheetId=${sheetId}` : "/"} className="flex-1 sm:flex-none">
+            <Button className="w-full sm:w-auto">
               <PlusCircle className="mr-2 h-4 w-4" />
               Add Expense
             </Button>
@@ -79,7 +77,11 @@ export default function ExpensesPage() {
           </Link>
         </div>
       ) : (
-        <ExpenseTable expenses={expenses} />
+        <div className="overflow-x-auto">
+          <div className="min-w-full">
+            <ExpenseTable expenses={expenses} />
+          </div>
+        </div>
       )}
     </div>
   )

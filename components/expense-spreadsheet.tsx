@@ -873,8 +873,8 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
                 placeholder="0.00"
                 className={cn(
                   "pl-7",
-                  getDescriptionForCell(date, category) ? "bg-[#D5FF74]" : "",
-                  parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF]" : ""
+                  getDescriptionForCell(date, category) ? "bg-[#D5FF74] dark:bg-[#D5FF74]" : "",
+                  parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF] dark:bg-[#7BE7FF]" : ""
                 )}
                 value={getExpenseAmount(date, category)}
                 onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
@@ -1158,8 +1158,8 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
                                 placeholder="0.00"
                                 className={cn(
                                   "pl-7",
-                                  getDescriptionForCell(date, category) ? "bg-[#D5FF74]" : "",
-                                  parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF]" : ""
+                                  getDescriptionForCell(date, category) ? "bg-[#D5FF74] dark:bg-[#A5D041]/20" : "",
+                                  parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF] dark:bg-[#7BE7FF]/20" : ""
                                 )}
                                 value={getExpenseAmount(date, category)}
                                 onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
