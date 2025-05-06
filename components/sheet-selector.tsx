@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "@/components/ui/use-toast"
-import { LockIcon, UnlockIcon, UserIcon, PlusCircle } from "lucide-react"
-import { getExpenseSheets, verifySheetPin, setLastAccessedSheet, getLastAccessedSheet, createExpenseSheet, type ExpenseSheet } from "@/lib/sheets"
+import { LockIcon, UnlockIcon, UserIcon, PlusCircle, Pencil } from "lucide-react"
+import { getExpenseSheets, verifySheetPin, setLastAccessedSheet, getLastAccessedSheet, createExpenseSheet, updateExpenseSheet, type ExpenseSheet } from "@/lib/sheets"
 import { supabase, getCurrentUserId } from "@/lib/supabase" // Import the supabase client and getCurrentUserId
 
 export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: string) => void }) {
@@ -20,6 +20,9 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
   const [newSheetName, setNewSheetName] = useState("")
   const [newSheetPin, setNewSheetPin] = useState("")
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [editSheetDialogOpen, setEditSheetDialogOpen] = useState(false)
+  const [editSheetId, setEditSheetId] = useState("")
+  const [editSheetName, setEditSheetName] = useState("")
   
   // Load available sheets from Supabase
   useEffect(() => {
@@ -338,6 +341,69 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
     }
   }
   
+  // Handle sheet edit button click
+  const handleEditSheet = (sheet: ExpenseSheet, e: React.MouseEvent) => {
+    // Prevent triggering the sheet selection when clicking the edit button
+    e.stopPropagation()
+    
+    setEditSheetId(sheet.id)
+    setEditSheetName(sheet.name)
+    setEditSheetDialogOpen(true)
+  }
+  
+  // Handle saving edited sheet name
+  const handleSaveEditedSheet = async () => {
+    if (!editSheetId || !editSheetName.trim()) {
+      toast({
+        title: "Invalid input",
+        description: "Please provide a valid name for your sheet",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    try {
+      const updatedSheet = await updateExpenseSheet(editSheetId, { name: editSheetName.trim() })
+      
+      if (updatedSheet) {
+        toast({
+          title: "Sheet updated",
+          description: `Sheet name has been updated to "${editSheetName.trim()}"`,
+        })
+        
+        // Update the sheet in the available sheets list
+        setAvailableSheets(prev => 
+          prev.map(sheet => 
+            sheet.id === editSheetId 
+              ? { ...sheet, name: editSheetName.trim() }
+              : sheet
+          )
+        )
+        
+        // Also update selectedSheet if it's the same one
+        if (selectedSheet?.id === editSheetId) {
+          setSelectedSheet({ ...selectedSheet, name: editSheetName.trim() })
+        }
+        
+        // Close dialog
+        setEditSheetDialogOpen(false)
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to update sheet. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Failed to update sheet name:", error)
+      toast({
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+  
   if (isLoading) {
     return (
       <Card>
@@ -395,15 +461,27 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
                       <UserIcon className="h-4 w-4 mr-2" />
                       {sheet.name}
                     </div>
-                    {sheet.has_pin ? (
-                      <div title="PIN protected">
-                        <LockIcon className="h-4 w-4 text-amber-500" />
-                      </div>
-                    ) : (
-                      <div title="No PIN protection">
-                        <UnlockIcon className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        onClick={(e) => handleEditSheet(sheet, e)}
+                        title="Edit sheet name"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        <span className="sr-only">Edit</span>
+                      </Button>
+                      {sheet.has_pin ? (
+                        <div title="PIN protected">
+                          <LockIcon className="h-4 w-4 text-amber-500" />
+                        </div>
+                      ) : (
+                        <div title="No PIN protection">
+                          <UnlockIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardFooter className="pt-2 text-xs text-muted-foreground">
@@ -489,6 +567,36 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
           <DialogFooter>
             <Button type="submit" onClick={handleCreateSheet}>
               Create Sheet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editSheetDialogOpen} onOpenChange={setEditSheetDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Sheet Name</DialogTitle>
+            <DialogDescription>
+              Update the name of your expense sheet.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="editName" className="text-right">
+                Name
+              </label>
+              <Input
+                id="editName"
+                className="col-span-3"
+                placeholder="Enter new sheet name"
+                value={editSheetName}
+                onChange={(e) => setEditSheetName(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="submit" onClick={handleSaveEditedSheet}>
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

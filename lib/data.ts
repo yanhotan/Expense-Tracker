@@ -14,6 +14,15 @@ export interface Expense {
   created_at?: string
 }
 
+export interface ColumnDescription {
+  id: string
+  expense_id: string
+  column_name: string
+  description: string
+  user_id?: string
+  created_at?: string
+}
+
 // Helper function to determine if we're in a build/SSR context
 const isServerRendering = () => {
   return typeof window === 'undefined' && process.env.NODE_ENV === 'production';
@@ -665,4 +674,140 @@ export function deduplicateExpenses(expenses: Expense[]): Expense[] {
   });
   
   return deduplicated;
+}
+
+// Column description management functions
+export async function getColumnDescriptions(expenseId: string): Promise<Record<string, string>> {
+  // During build or SSR processes, return empty object
+  if (isServerRendering()) {
+    return {};
+  }
+
+  try {
+    const user_id = await getCurrentUserId();
+    const { data, error } = await supabase
+      .from('column_descriptions')
+      .select('*')
+      .eq('expense_id', expenseId)
+      .eq('user_id', user_id);
+
+    if (error) {
+      console.warn('Supabase error when fetching column descriptions:', error);
+      return {};
+    }
+
+    if (!data || data.length === 0) {
+      return {};
+    }
+
+    // Transform array of descriptions into a record with column_name as key and description as value
+    const descriptions: Record<string, string> = {};
+    data.forEach((item) => {
+      descriptions[item.column_name] = item.description;
+    });
+
+    return descriptions;
+  } catch (error) {
+    console.warn('Exception while fetching column descriptions from Supabase:', error);
+    return {};
+  }
+}
+
+export async function addOrUpdateColumnDescription(
+  expenseId: string,
+  columnName: string,
+  description: string
+): Promise<boolean> {
+  // During SSR or build, don't try to save
+  if (isServerRendering()) {
+    return false;
+  }
+
+  // Get the current authenticated user ID
+  const user_id = await getCurrentUserId();
+
+  try {
+    // First check if a description already exists for this column
+    const { data: existingData, error: fetchError } = await supabase
+      .from('column_descriptions')
+      .select('id')
+      .eq('expense_id', expenseId)
+      .eq('column_name', columnName)
+      .eq('user_id', user_id);
+
+    if (fetchError) {
+      console.warn('Supabase error when checking for existing column description:', fetchError);
+      return false;
+    }
+
+    if (existingData && existingData.length > 0) {
+      // Update existing description
+      const { error: updateError } = await supabase
+        .from('column_descriptions')
+        .update({
+          description,
+          user_id
+        })
+        .eq('id', existingData[0].id);
+
+      if (updateError) {
+        console.warn('Supabase error when updating column description:', updateError);
+        return false;
+      }
+
+      return true;
+    } else {
+      // Insert new description
+      const newDescription = {
+        id: uuidv4(),
+        expense_id: expenseId,
+        column_name: columnName,
+        description,
+        user_id,
+        created_at: new Date().toISOString()
+      };
+
+      const { error: insertError } = await supabase
+        .from('column_descriptions')
+        .insert(newDescription);
+
+      if (insertError) {
+        console.warn('Supabase error when inserting column description:', insertError);
+        return false;
+      }
+
+      return true;
+    }
+  } catch (error) {
+    console.warn('Exception when adding/updating column description:', error);
+    return false;
+  }
+}
+
+export async function deleteColumnDescription(
+  expenseId: string,
+  columnName: string
+): Promise<boolean> {
+  // During SSR or build, don't try to delete
+  if (isServerRendering()) {
+    return false;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('column_descriptions')
+      .delete()
+      .eq('expense_id', expenseId)
+      .eq('column_name', columnName);
+
+    if (error) {
+      console.warn('Supabase error when deleting column description:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.warn('Exception when deleting column description:', error);
+    return false;
+  }
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react"
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from "date-fns"
-import { PlusCircle, Save, Edit2, Trash2 } from "lucide-react"
+import { PlusCircle, Save, Edit2, Trash2, MessageCircle, Info } from "lucide-react"
 import { v4 as uuidv4 } from 'uuid'
 import debounce from 'lodash.debounce'
 
@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/components/ui/use-toast"
+import { Textarea } from "@/components/ui/textarea"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { 
   getExpenses, 
   addExpense, 
@@ -23,7 +25,11 @@ import {
   removeCategory,
   updateCategoryName,
   getSheetCategories,
-  saveSheetCategories
+  saveSheetCategories,
+  getColumnDescriptions,
+  addOrUpdateColumnDescription,
+  deleteColumnDescription,
+  type ColumnDescription
 } from "@/lib/data"
 import { getCurrentUserId } from "@/lib/supabase"
 import {
@@ -35,6 +41,32 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+
+// Column descriptions state type
+type ColumnDescriptions = {
+  [key: string]: string;
+};
+
+interface ExpenseSpreadsheetProps {
+  expenses: Record<string, any>[];
+}
+
+interface ExpenseCellProps {
+  date: Date
+  category: string
+  value: string
+  onChange: (value: number) => void
+}
+
+interface DescriptionDialogState {
+  expenseId: string
+  column: string
+  description: string
+  date: Date
+  category: string
+}
 
 export function ExpenseSpreadsheet({ 
   sheetId, 
@@ -45,6 +77,7 @@ export function ExpenseSpreadsheet({
   currentMonth?: Date,
   onMonthChange?: (date: Date) => void
 }) {
+  const { toast } = useToast();
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [currentMonth, setCurrentMonth] = useState<Date>(externalCurrentMonth || new Date())
@@ -56,12 +89,176 @@ export function ExpenseSpreadsheet({
   const [categoryToEdit, setCategoryToEdit] = useState({ oldName: "", newName: "" })
   const [isDeleteCategoryDialogOpen, setIsDeleteCategoryDialogOpen] = useState(false)
   const [categoryToDelete, setCategoryToDelete] = useState("")
+  
+  // New state for column descriptions
+  const [columnDescriptions, setColumnDescriptions] = useState<Record<string, string>>({})
+  const [isDescriptionDialogOpen, setIsDescriptionDialogOpen] = useState(false)
+  const [currentDescription, setCurrentDescription] = useState<DescriptionDialogState>({
+    expenseId: "", 
+    column: "", 
+    description: "",
+    date: new Date(),
+    category: ""
+  })
 
   // State to track all input values before saving
   const [inputValues, setInputValues] = useState<Record<string, string | undefined>>({});
-  
+
   // State to track cells that are currently being saved
   const [savingCells, setSavingCells] = useState<Record<string, boolean>>({});
+
+  // State for cell editing functionality
+  const [editing, setEditing] = useState(false)
+  const [editingCell, setEditingCell] = useState<{ rowId: string; field: string } | null>(null)
+  const [editingValue, setEditingValue] = useState("")
+  const [editingDescriptionCell, setEditingDescriptionCell] = useState<{ expenseId: string; field: string } | null>(null)
+
+  // Description Dialog content
+  const handleDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setCurrentDescription({
+      ...currentDescription,
+      description: e.target.value
+    });
+  };
+
+  // Description Dialog event handlers
+  const openDescriptionDialog = (dateOrExpenseId: Date | string, category: string, date?: Date) => {
+    if (dateOrExpenseId instanceof Date) {
+      const expense = findExpenseForCell(dateOrExpenseId, category);
+      if (expense) {
+        handleDescriptionDialog(expense.id, category, dateOrExpenseId, category);
+      } else {
+        toast({
+          title: "No expense found",
+          description: "You need to add an expense value first before adding a description.",
+          variant: "default",
+        });
+      }
+    } else {
+      handleDescriptionDialog(dateOrExpenseId, category, date || new Date(), category);
+    }
+  };
+
+  const handleDescriptionDialog = (expenseId: string, column: string, date: Date, category: string) => {
+    const descKey = `${expenseId}-${column}`;
+    const existingDescription = columnDescriptions[descKey] || "";
+    
+    setCurrentDescription({
+      expenseId,
+      column,
+      description: existingDescription,
+      date,
+      category
+    });
+    
+    setIsDescriptionDialogOpen(true);
+  };
+
+  const handleSaveDescription = async () => {
+    try {
+      if (!currentDescription.expenseId || !currentDescription.column) {
+        return;
+      }
+      
+      const descKey = `${currentDescription.expenseId}-${currentDescription.column}`;
+      
+      if (!currentDescription.description.trim()) {
+        // Delete description if empty
+        await deleteColumnDescription(currentDescription.expenseId, currentDescription.column);
+        setColumnDescriptions(prev => {
+          const updated = { ...prev };
+          delete updated[descKey];
+          return updated;
+        });
+      } else {
+        // Save or update description
+        await addOrUpdateColumnDescription(
+          currentDescription.expenseId,
+          currentDescription.column,
+          currentDescription.description.trim()
+        );
+        
+        setColumnDescriptions(prev => ({
+          ...prev,
+          [descKey]: currentDescription.description.trim()
+        }));
+      }
+
+      setIsDescriptionDialogOpen(false);
+      toast({
+        title: "Success",
+        description: currentDescription.description.trim() 
+          ? "Description saved successfully"
+          : "Description removed successfully",
+      });
+    } catch (error) {
+      console.error("Error saving description:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save description. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const closeDescriptionDialog = () => {
+    setIsDescriptionDialogOpen(false);
+    setCurrentDescription({
+      expenseId: "",
+      column: "",
+      description: "",
+      date: new Date(),
+      category: ""
+    });
+  };
+
+  // Format cell value based on column type
+  const formatCellValue = (value: any, columnKey: string): React.ReactNode => {
+    if (columnKey === 'amount') {
+      return value !== undefined && value !== null 
+        ? formatCurrency(parseFloat(value)) 
+        : '-';
+    }
+    
+    if (columnKey === 'date' && value) {
+      return format(new Date(value), 'MMM dd, yyyy');
+    }
+    
+    return value || '-';
+  };
+  
+  // Cell editing functionality
+  const handleCellClick = (rowId: string, field: string, value: string) => {
+    setEditingCell({ rowId, field });
+    setEditingValue(value);
+    setEditing(true);
+  };
+
+  // Handle keydown events for cell editing
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      // Save the edited value
+      if (editingCell) {
+        const updatedExpenses = expenses.map((exp: Expense) => {
+          if (exp.id === editingCell.rowId) {
+            return {
+              ...exp,
+              [editingCell.field]: editingValue
+            };
+          }
+          return exp;
+        });
+        
+        setExpenses(updatedExpenses);
+        setEditing(false);
+        setEditingCell(null);
+      }
+    } else if (e.key === 'Escape') {
+      // Cancel editing
+      setEditing(false);
+      setEditingCell(null);
+    }
+  };
 
   // Generate dates for the current month
   const daysInMonth = eachDayOfInterval({
@@ -86,6 +283,20 @@ export function ExpenseSpreadsheet({
         // Load sheet-specific categories
         const sheetCategories = await getSheetCategories(sheetId)
         setCategories(sheetCategories)
+
+        // Load column descriptions for all expenses
+        const descriptionsMap: Record<string, string> = {}
+        
+        // For each expense, get its descriptions and populate the map
+        for (const expense of expenseData) {
+          const descriptions = await getColumnDescriptions(expense.id)
+          Object.entries(descriptions).forEach(([column_name, description]) => {
+            const key = `${expense.id}-${column_name}`
+            descriptionsMap[key] = description
+          })
+        }
+        
+        setColumnDescriptions(descriptionsMap)
       } catch (error) {
         console.error('Failed to load expenses:', error)
         toast({
@@ -559,6 +770,173 @@ export function ExpenseSpreadsheet({
       : <span>{formatted}</span>;
   };
 
+  // Find expense for a given date and category
+  const findExpenseForCell = (date: Date, category: string): Expense | undefined => {
+    return expenses.find((exp) => 
+      isSameDay(new Date(exp.date), date) && exp.category === category
+    );
+  };
+
+  // Helper function to get description for a cell
+  const getDescriptionForCell = (date: Date, category: string): string | undefined => {
+    const expense = findExpenseForCell(date, category);
+    if (!expense) return undefined;
+    
+    const key = `${expense.id}-${category}`;
+    return columnDescriptions[key];
+  };
+
+  // Find the renderCell function and enhance it to support descriptions
+const renderCell = (expense: any, column: any) => {
+  const hasDescription = columnDescriptions[`${expense.id}-${column.key}`];
+  
+  // Handle special columns first
+  if (column.key === "id") {
+    return expense[column.key] || "";
+  }
+
+  if (column.key === 'amount') {
+    return parseFloat(expense[column.key]) > 0 ? formatCurrency(parseFloat(expense[column.key])) : '-';
+  }
+  
+  if (column.key === 'date' && expense[column.key]) {
+    return format(new Date(expense[column.key]), 'MMM dd, yyyy');
+  }
+
+  // Editable cell content
+  const cellContent = (
+    <div className="w-full h-full relative group">
+      {editing && editingCell?.rowId === expense.id && editingCell?.field === column.key ? (
+        <input
+          type="text"
+          value={editingValue}
+          onChange={(e) => setEditingValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="w-full h-full p-1 border outline-none"
+          autoFocus
+          onFocus={(e) => e.target.select()}
+        />
+      ) : (
+        <div 
+          onClick={() => handleCellClick(expense.id, column.key, expense[column.key] || "")}
+          className="cursor-pointer p-1 w-full h-full flex justify-between items-center"
+        >
+          <span className={`truncate ${expense[column.key] ? "" : "text-gray-400 italic"}`}>
+            {formatCellValue(expense[column.key], column.key)}
+          </span>
+          
+          {hasDescription && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info size={16} className="text-blue-500 cursor-help ml-1" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-xs">{columnDescriptions[expense.id][column.key]}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      )}
+      
+      {/* Description button - show on hover when not editing */}
+      {editing && !(editingCell?.rowId === expense.id && editingCell?.field === column.key) && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            openDescriptionDialog(expense.id, column.key);
+          }}
+          className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          title={hasDescription ? "Edit description" : "Add description"}
+        >
+          <Info size={14} className={hasDescription ? "text-blue-500" : "text-gray-400"} />
+        </button>
+      )}
+    </div>
+  );
+
+  return cellContent;
+};
+
+const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
+  const description = getDescriptionForCell(date, category);
+  
+  return (
+    <div className="relative flex items-center">
+      <TooltipProvider delayDuration={0}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="relative flex items-center">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                className="pl-7"
+                value={getExpenseAmount(date, category)}
+                onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
+                onBlur={(e) => {
+                  // Only save if value is different from what's in the database
+                  const expense = findExpenseForCell(date, category);
+                  const currentValue = e.target.value;
+                  const storedValue = expense ? expense.amount.toString() : "";
+                  if (currentValue !== storedValue) {
+                    saveExpenseValue(date, category);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveExpenseValue(date, category);
+                    const element = e.target as HTMLElement;
+                    const nextInput = element.closest('tr')?.nextElementSibling?.querySelector('input');
+                    if (nextInput) {
+                      nextInput.focus();
+                    }
+                  }
+                }}
+                autoComplete="off"
+              />
+              {savingCells[`${date.toISOString()}-${category}`] && (
+                <div className="absolute right-2 top-2 h-4 w-4">
+                  <svg className="animate-spin h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                </div>
+              )}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            {getDescriptionForCell(date, category) || "No description"}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`absolute right-2 top-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity ${
+                getDescriptionForCell(date, category) ? 'text-blue-500' : 'text-gray-400'
+              }`}
+              onClick={(e) => {
+                e.preventDefault();
+                openDescriptionDialog(date, category);
+              }}
+            >
+              <MessageCircle className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={5} className="select-none" aria-live="polite">
+            {getDescriptionForCell(date, category) || "Click to add description"}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+};
+
   if (isLoading) {
     return (
       <Card className="p-8">
@@ -574,6 +952,81 @@ export function ExpenseSpreadsheet({
       </Card>
     )
   }
+
+  const descriptionDialog = (
+    <Dialog open={isDescriptionDialogOpen} onOpenChange={setIsDescriptionDialogOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {currentDescription.description ? "Edit Description" : "Add Description"}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <Textarea
+            value={currentDescription.description || ""}
+            onChange={handleDescriptionChange}
+            placeholder="Enter description for this value..."
+            className="min-h-[100px]"
+            autoFocus
+          />
+        </div>
+        <DialogFooter className="flex justify-between">
+          {currentDescription.description && (
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (currentDescription.expenseId && currentDescription.column) {
+                  await deleteColumnDescription(
+                    currentDescription.expenseId,
+                    currentDescription.column
+                  );
+                  
+                  // Update local state
+                  setColumnDescriptions(prev => {
+                    const updatedDescriptions = { ...prev };
+                    delete updatedDescriptions[`${currentDescription.expenseId}-${currentDescription.column}`];
+                    return updatedDescriptions;
+                  });
+                  
+                  setIsDescriptionDialogOpen(false);
+                  setCurrentDescription({
+                    expenseId: "", 
+                    column: "", 
+                    description: "",
+                    date: new Date(),
+                    category: ""
+                  });
+                  toast({
+                    description: "Description deleted successfully",
+                  });
+                }
+              }}
+            >
+              Delete
+            </Button>
+          )}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsDescriptionDialogOpen(false);
+                setCurrentDescription({
+                  expenseId: "", 
+                  column: "", 
+                  description: "",
+                  date: new Date(),
+                  category: ""
+                });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveDescription}>Save</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   return (
     <Card className="overflow-auto">
@@ -689,39 +1142,68 @@ export function ExpenseSpreadsheet({
 
                 {categories.map((category) => (
                   <TableCell key={`${date.toISOString()}-${category}`}>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        className="pl-7"
-                        value={getExpenseAmount(date, category)}
-                        onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
-                        onBlur={() => saveExpenseValue(date, category)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveExpenseValue(date, category);
-                            // Move to the next input when Enter is pressed
-                            // Add proper type casting to access DOM methods
-                            const element = e.target as HTMLElement;
-                            const nextInput = element.closest('tr')?.nextElementSibling?.querySelector('input');
-                            if (nextInput) {
-                              nextInput.focus();
-                            }
-                          }
-                        }}
-                        // Disable the loading indication during typing
-                        autoComplete="off"
-                      />
-                      {savingCells[`${date.toISOString()}-${category}`] && (
-                        <div className="absolute right-2 top-2 h-4 w-4">
-                          <svg className="animate-spin h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        </div>
-                      )}
+                    <div className="relative group">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="relative flex items-center w-full">
+                              <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="0.00"
+                                className="pl-7"
+                                value={getExpenseAmount(date, category)}
+                                onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
+                                onBlur={(e) => {
+                                  // Only save if value is different from what's in the database
+                                  const expense = findExpenseForCell(date, category);
+                                  const currentValue = e.target.value;
+                                  const storedValue = expense ? expense.amount.toString() : "";
+                                  if (currentValue !== storedValue) {
+                                    saveExpenseValue(date, category);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    saveExpenseValue(date, category);
+                                    const element = e.target as HTMLElement;
+                                    const nextInput = element.closest('tr')?.nextElementSibling?.querySelector('input');
+                                    if (nextInput) {
+                                      nextInput.focus();
+                                    }
+                                  }
+                                }}
+                                autoComplete="off"
+                              />
+                              {savingCells[`${date.toISOString()}-${category}`] && (
+                                <div className="absolute right-2 top-2 h-4 w-4">
+                                  <svg className="animate-spin h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                </div>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={`absolute right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity ${
+                                  getDescriptionForCell(date, category) ? 'text-blue-500' : 'text-gray-400'
+                                }`}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  openDescriptionDialog(date, category);
+                                }}
+                              >
+                                <MessageCircle className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {getDescriptionForCell(date, category) || "Click to add description"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                   </TableCell>
                 ))}
@@ -825,6 +1307,9 @@ export function ExpenseSpreadsheet({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Description Dialog */}
+      {descriptionDialog}
     </Card>
   )
 }

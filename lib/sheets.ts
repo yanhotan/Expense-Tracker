@@ -412,3 +412,88 @@ export async function verifySheetPin(sheetId: string, pin: string): Promise<bool
     return sheet?.pin === pin;
   }
 }
+
+// Update an existing expense sheet
+export async function updateExpenseSheet(sheetId: string, updates: { name?: string; pin?: string | null }): Promise<ExpenseSheet | null> {
+  // During SSR or build, don't try to update
+  if (isServerRendering()) {
+    return null;
+  }
+
+  const user_id = await getCurrentUserId();
+  console.log(`Updating sheet ${sheetId} for user ${user_id}:`, updates);
+  
+  // First, try to update in Supabase with retry logic
+  let updatedSheet = null;
+  let retryCount = 0;
+  const maxRetries = 3;
+  let databaseSuccess = false;
+  
+  while (retryCount < maxRetries) {
+    try {
+      console.log(`Attempt ${retryCount + 1} to update sheet in Supabase`);
+      const { data, error } = await supabase
+        .from('expense_sheets')
+        .update(updates)
+        .eq('id', sheetId)
+        .select()
+        .single();
+
+      if (error) {
+        console.warn(`Supabase error updating sheet (attempt ${retryCount + 1}):`, error);
+        retryCount++;
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 500));
+        continue;
+      }
+
+      console.log('Sheet updated successfully in Supabase:', data);
+      updatedSheet = data;
+      databaseSuccess = true;
+      break;
+    } catch (error) {
+      console.error(`Exception while updating sheet (attempt ${retryCount + 1}):`, error);
+      retryCount++;
+      // Wait a bit before retrying
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+  
+  // If database update failed or if we're offline, try to update localStorage as well
+  try {
+    const key = `expense-tracker-sheet-${sheetId}`;
+    const sheetDataStr = localStorage.getItem(key);
+    
+    if (sheetDataStr) {
+      const sheetData = JSON.parse(sheetDataStr);
+      const updatedLocalSheet = {
+        ...sheetData,
+        name: updates.name ?? sheetData.name,
+        pin: updates.pin !== undefined ? updates.pin : sheetData.pin,
+        hasPin: updates.pin !== undefined ? !!updates.pin : sheetData.hasPin
+      };
+      
+      localStorage.setItem(key, JSON.stringify(updatedLocalSheet));
+      console.log('Sheet updated in localStorage:', updatedLocalSheet);
+      
+      // If database update failed, return our updated localStorage version
+      if (!databaseSuccess) {
+        return {
+          id: updatedLocalSheet.id,
+          name: updatedLocalSheet.name,
+          pin: updatedLocalSheet.pin,
+          has_pin: updatedLocalSheet.hasPin,
+          created_at: updatedLocalSheet.created || new Date().toISOString(),
+          user_id: updatedLocalSheet.user_id || user_id
+        };
+      }
+    } else if (!databaseSuccess) {
+      console.warn(`Sheet ${sheetId} not found in localStorage and database update failed`);
+    }
+  } catch (e) {
+    console.warn(`Failed to update sheet ${sheetId} in localStorage:`, e);
+    // If localStorage fails but database succeeded, we're still good
+  }
+  
+  return updatedSheet;
+}
