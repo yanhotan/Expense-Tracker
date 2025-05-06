@@ -871,7 +871,11 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
                 type="number"
                 step="0.01"
                 placeholder="0.00"
-                className="pl-7"
+                className={cn(
+                  "pl-7",
+                  getDescriptionForCell(date, category) ? "bg-[#D5FF74]" : "",
+                  parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF]" : ""
+                )}
                 value={getExpenseAmount(date, category)}
                 onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
                 onBlur={(e) => {
@@ -911,7 +915,7 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
         </Tooltip>
       </TooltipProvider>
 
-      <TooltipProvider>
+      <TooltipProvider delayDuration={0}>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -1152,7 +1156,11 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
                                 type="number"
                                 step="0.01"
                                 placeholder="0.00"
-                                className="pl-7"
+                                className={cn(
+                                  "pl-7",
+                                  getDescriptionForCell(date, category) ? "bg-[#D5FF74]" : "",
+                                  parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF]" : ""
+                                )}
                                 value={getExpenseAmount(date, category)}
                                 onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
                                 onBlur={(e) => {

@@ -19,6 +19,7 @@ export function ExpenseCharts({
 }) {
   const [categoryTotals, setCategoryTotals] = useState<Record<string, number>>({})
   const [dailyTotals, setDailyTotals] = useState<Record<string, number>>({})
+  const [monthlyTotals, setMonthlyTotals] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [expenses, setExpenses] = useState<Expense[]>([])
   const monthYearString = format(selectedMonth, "MMMM yyyy")
@@ -36,6 +37,7 @@ export function ExpenseCharts({
         // Reset data states when loading new data
         setCategoryTotals({})
         setDailyTotals({})
+        setMonthlyTotals({})
         
         // Get expenses for this specific sheet only
         const allExpenses = await getExpenses(sheetId)
@@ -59,6 +61,7 @@ export function ExpenseCharts({
       // Reset data states first to ensure no data leakage
       setCategoryTotals({})
       setDailyTotals({})
+      setMonthlyTotals({})
       
       if (!selectedMonth || expenses.length === 0) return
       
@@ -85,9 +88,18 @@ export function ExpenseCharts({
         const day = format(date, "d MMM") // Day and abbreviated month
         dailyData[day] = (dailyData[day] || 0) + expense.amount
       })
+
+      // Calculate monthly totals - group all expenses by month
+      const monthlyData: Record<string, number> = {}
+      expenses.forEach(expense => {
+        const date = new Date(expense.date)
+        const monthYear = format(date, "MMM yyyy")
+        monthlyData[monthYear] = (monthlyData[monthYear] || 0) + expense.amount
+      })
       
       setCategoryTotals(categoryData)
       setDailyTotals(dailyData)
+      setMonthlyTotals(monthlyData)
     }
     
     calculateChartData()
@@ -105,7 +117,8 @@ export function ExpenseCharts({
       <Tabs defaultValue="categories">
         <TabsList className="mb-4">
           <TabsTrigger value="categories">By Category</TabsTrigger>
-          <TabsTrigger value="monthly">Daily Trend</TabsTrigger>
+          <TabsTrigger value="daily">Daily Trend</TabsTrigger>
+          <TabsTrigger value="monthly">Monthly Trend</TabsTrigger>
         </TabsList>
 
         {isLoading ? (
@@ -140,11 +153,11 @@ export function ExpenseCharts({
               </Card>
             </TabsContent>
 
-            <TabsContent value="monthly">
+            <TabsContent value="daily">
               <Card>
                 <CardHeader>
                   <CardTitle>Daily Expenses</CardTitle>
-                  <CardDescription>Your spending trend for {monthYearString}</CardDescription>
+                  <CardDescription>Your daily spending trend for {monthYearString}</CardDescription>
                 </CardHeader>
                 <CardContent className="h-[400px]">
                   {Object.keys(dailyTotals).length > 0 ? (
@@ -152,6 +165,24 @@ export function ExpenseCharts({
                   ) : (
                     <div className="h-full flex items-center justify-center">
                       <p className="text-muted-foreground">No expense data for {monthYearString}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="monthly">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Monthly Trend</CardTitle>
+                  <CardDescription>Your spending pattern across months</CardDescription>
+                </CardHeader>
+                <CardContent className="h-[400px]">
+                  {Object.keys(monthlyTotals).length > 0 ? (
+                    <MonthlyExpenses data={monthlyTotals} />
+                  ) : (
+                    <div className="h-full flex items-center justify-center">
+                      <p className="text-muted-foreground">No monthly trend data available</p>
                     </div>
                   )}
                 </CardContent>
