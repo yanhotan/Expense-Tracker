@@ -217,25 +217,52 @@ export async function deleteExpense(id: string): Promise<void> {
   }
 
   try {
+    // First, delete from database
     const { error } = await supabase
       .from('expenses')
       .delete()
-      .eq('id', id)
+      .eq('id', id);
 
     if (error) {
-      console.warn('Supabase delete error, falling back to localStorage:', error);
-      // Fall back to localStorage
-      const expenses = getLocalExpenses();
-      const updatedExpenses = expenses.filter(expense => expense.id !== id);
-      saveLocalExpenses(updatedExpenses);
-      return;
+      console.warn('Supabase delete error:', error);
+      throw error; // Let the catch block handle the fallback
     }
-  } catch (error) {
-    console.warn('Failed to delete expense from Supabase, using localStorage fallback:', error);
-    // Fall back to localStorage
+
+    // If database delete was successful, always clear from localStorage
     const expenses = getLocalExpenses();
     const updatedExpenses = expenses.filter(expense => expense.id !== id);
     saveLocalExpenses(updatedExpenses);
+
+    // Also clear any column descriptions associated with this expense
+    try {
+      await supabase
+        .from('column_descriptions')
+        .delete()
+        .eq('expense_id', id);
+    } catch (descError) {
+      console.warn('Failed to delete column descriptions:', descError);
+    }
+    
+  } catch (error) {
+    console.warn('Failed to delete expense from Supabase:', error);
+    // Still update localStorage even if database fails
+    const expenses = getLocalExpenses();
+    const updatedExpenses = expenses.filter(expense => expense.id !== id);
+    saveLocalExpenses(updatedExpenses);
+  }
+  
+  // Clear any cached data in localStorage that might reference this expense
+  try {
+    const keysToCheck = Object.keys(localStorage).filter(key => 
+      key.startsWith('expense-tracker-') && 
+      key.includes(id)
+    );
+    
+    keysToCheck.forEach(key => {
+      localStorage.removeItem(key);
+    });
+  } catch (e) {
+    console.warn('Error clearing cached expense data:', e);
   }
 }
 

@@ -319,205 +319,28 @@ export function ExpenseSpreadsheet({
     }
   }, [externalCurrentMonth])
 
-  // Create a debounced save function for auto-saving
-  const debouncedSaveExpense = useCallback(
-    debounce((date: Date, category: string) => {
-      saveExpenseValue(date, category);
-    }, 800), // Auto-save after 800ms of inactivity
-    [] // Remove dependencies to prevent recreation of debounce function
-  );
-
-  // Handle expense input change - with debounced auto-save
+  // Handle expense input change with immediate save
   const handleExpenseInputChange = (date: Date, category: string, value: string) => {
     const inputKey = `${date.toISOString()}-${category}`;
     
-    // Store the current input value without triggering an immediate save
+    // Store the current input value
     setInputValues(prev => ({
       ...prev,
       [inputKey]: value
     }));
-
-    // Trigger auto-save after short delay
-    debouncedSaveExpense(date, category);
   };
 
   // Handle save action when input is complete
-  const saveExpenseValue = async (date: Date, category: string) => {
+  const handleExpenseSave = (date: Date, category: string) => {
     const inputKey = `${date.toISOString()}-${category}`;
-    const value = inputValues[inputKey] || "";
+    const value = inputValues[inputKey];
     
-    // Cancel any ongoing debounced save operations to avoid conflicts
-    debouncedSaveExpense.cancel();
-    
-    // Mark this cell as saving
-    setSavingCells(prev => ({
-      ...prev,
-      [inputKey]: true
-    }));
-    
-    try {
-      const amount = value === "" ? 0 : Number.parseFloat(value);
-      if (isNaN(amount)) {
-        // Invalid number input, revert to previous value
-        console.log("Invalid number input, ignoring save");
-        setSavingCells(prev => ({
-          ...prev,
-          [inputKey]: false
-        }));
-        return;
-      }
-      
-      // Format the date in ISO format for consistent date matching
-      const dateISO = new Date(
-        date.getFullYear(),
-        date.getMonth(),
-        date.getDate(),
-        12, 0, 0 // Set to noon to avoid timezone issues
-      ).toISOString();
-      
-      console.log(`Saving expense for ${category} on ${format(date, "MMM dd")}: $${amount}`);
-
-      // New approach: First find ALL expenses for this date and category (to handle duplicates)
-      const matchingExpenses = expenses.filter(
-        (exp) => {
-          const expDate = new Date(exp.date);
-          return (
-            expDate.getFullYear() === date.getFullYear() &&
-            expDate.getMonth() === date.getMonth() &&
-            expDate.getDate() === date.getDate() &&
-            exp.category === category
-          );
-        }
-      );
-
-      // Execute appropriate action based on input and existing data
-      if (matchingExpenses.length > 0) {
-        // If we have multiple matching expenses, delete all but the most recent one
-        if (matchingExpenses.length > 1) {
-          console.log(`Found ${matchingExpenses.length} duplicate expenses for ${category} on ${format(date, "MMM dd")}. Cleaning up...`);
-          
-          // Sort by created_at in descending order (newest first)
-          const sorted = [...matchingExpenses].sort((a, b) => {
-            const dateA = new Date(a.created_at || 0);
-            const dateB = new Date(b.created_at || 0);
-            return dateB.getTime() - dateA.getTime();
-          });
-          
-          // Keep only the most recent one for updating
-          const primaryExpense = sorted[0];
-          
-          // Delete all duplicates
-          for (const dupe of sorted.slice(1)) {
-            await deleteExpense(dupe.id);
-            console.log(`Deleted duplicate expense: ${dupe.id}`);
-          }
-          
-          // Update expenses array in state - IMPORTANT: Do this BEFORE adding any new expenses
-          setExpenses(prev => prev.filter(exp => !sorted.slice(1).some(dupe => dupe.id === exp.id)));
-          
-          // Continue with the primary expense
-          if (amount === 0) {
-            // Delete the expense if amount is 0
-            await deleteExpense(primaryExpense.id);
-            
-            // Update local state immediately
-            setExpenses(prev => prev.filter(exp => exp.id !== primaryExpense.id));
-            console.log(`Deleted expense for ${category} on ${format(date, "MMM dd")}`);
-          } else {
-            // Update the expense
-            const updatedExpense = {
-              ...primaryExpense,
-              amount
-            };
-            
-            // Important: await the update to ensure it completes before returning
-            await updateExpense(updatedExpense);
-            
-            // Update local state immediately - replace the old expense with updated one
-            setExpenses(prev => prev.map(exp => 
-              exp.id === primaryExpense.id ? updatedExpense : exp
-            ));
-            console.log(`Updated expense for ${category} on ${format(date, "MMM dd")} to $${amount}`);
-          }
-        } else {
-          // Just one expense found, proceed normally
-          const existingExpense = matchingExpenses[0];
-          
-          if (amount === 0) {
-            // Delete the expense if amount is 0
-            await deleteExpense(existingExpense.id);
-            
-            // Update local state immediately
-            setExpenses(prev => prev.filter(exp => exp.id !== existingExpense.id));
-            console.log(`Deleted expense for ${category} on ${format(date, "MMM dd")}`);
-          } else {
-            // Update the expense
-            const updatedExpense = {
-              ...existingExpense,
-              amount
-            };
-            
-            // Important: await the update to ensure it completes
-            await updateExpense(updatedExpense);
-            
-            // Update local state immediately - replace the existing expense
-            setExpenses(prev => prev.map(exp => 
-              exp.id === existingExpense.id ? updatedExpense : exp
-            ));
-            console.log(`Updated expense for ${category} on ${format(date, "MMM dd")} to $${amount}`);
-          }
-        }
-      } else if (amount !== 0) {
-        // Create new expense with the sheet_id
-        const newExpense = {
-          id: uuidv4(),
-          date: dateISO,
-          amount,
-          category,
-          description: amount > 0 
-            ? `Expense on ${format(date, "MMM dd")}` 
-            : `Income/Return on ${format(date, "MMM dd")}`,
-          sheet_id: sheetId,
-          user_id: await getCurrentUserId(),
-          created_at: new Date().toISOString()
-        };
-        
-        // Save to database first (to prevent double saving)
-        const saved = await addExpense(newExpense, sheetId);
-        
-        if (saved) {
-          // Only update state AFTER successful save to prevent duplicate entries
-          setExpenses(prev => [...prev, newExpense]);
-          console.log(`Added new ${amount > 0 ? 'expense' : 'income/return'} for ${category} on ${format(date, "MMM dd")}: $${amount}`);
-        } else {
-          toast({
-            title: "Warning",
-            description: "Failed to save expense to database. Please try again.",
-            variant: "default",
-          });
-        }
-      }
-      
-      // After successful save/update, clear the input value from local state
-      setInputValues(prev => ({
-        ...prev,
-        [inputKey]: undefined
-      }));
-      
-    } catch (error) {
-      console.error('Error saving expense:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save expense data. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      // Mark this cell as no longer saving
-      setSavingCells(prev => ({
-        ...prev,
-        [inputKey]: false
-      }));
+    // If there's no pending value (no changes made), don't save
+    if (value === undefined) {
+      return;
     }
+
+    saveExpenseValue(date, category);
   };
 
   // Add new category
@@ -786,6 +609,114 @@ export function ExpenseSpreadsheet({
     return columnDescriptions[key];
   };
 
+  // Save expense value to database
+  const saveExpenseValue = async (date: Date, category: string) => {
+    const inputKey = `${date.toISOString()}-${category}`;
+    const value = inputValues[inputKey];
+    
+    // If there's no pending value (no changes made), don't save
+    if (value === undefined) {
+      return;
+    }
+
+    // Mark this cell as saving
+    setSavingCells(prev => ({
+      ...prev,
+      [inputKey]: true
+    }));
+    
+    try {
+      const amount = value === "" ? 0 : Number.parseFloat(value);
+      if (isNaN(amount)) {
+        console.log("Invalid number input, ignoring save");
+        return;
+      }
+
+      // Format the date in ISO format
+      const dateISO = new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+        12, 0, 0
+      ).toISOString();
+
+      // Find existing expense
+      const existingExpense = findExpenseForCell(date, category);
+
+      if (existingExpense) {
+        if (value.trim() === "" || amount === 0) {
+          // If value is empty or 0, delete the expense
+          await deleteExpense(existingExpense.id);
+          setExpenses(prev => prev.filter(exp => exp.id !== existingExpense.id));
+          
+          // Clear input value and descriptions
+          setInputValues(prev => {
+            const updated = { ...prev };
+            delete updated[inputKey];
+            return updated;
+          });
+
+          const descKey = `${existingExpense.id}-${category}`;
+          if (columnDescriptions[descKey]) {
+            await deleteColumnDescription(existingExpense.id, category);
+            setColumnDescriptions(prev => {
+              const updated = { ...prev };
+              delete updated[descKey];
+              return updated;
+            });
+          }
+        } else {
+          const updatedExpense = {
+            ...existingExpense,
+            amount
+          };
+          await updateExpense(updatedExpense);
+          setExpenses(prev => prev.map(exp => 
+            exp.id === existingExpense.id ? updatedExpense : exp
+          ));
+        }
+      } else if (amount !== 0) {
+        const newExpense = {
+          id: uuidv4(),
+          date: dateISO,
+          amount,
+          category,
+          description: amount > 0 
+            ? `Expense on ${format(date, "MMM dd")}` 
+            : `Income/Return on ${format(date, "MMM dd")}`,
+          sheet_id: sheetId,
+          user_id: await getCurrentUserId(),
+          created_at: new Date().toISOString()
+        };
+        
+        const saved = await addExpense(newExpense, sheetId);
+        if (saved) {
+          setExpenses(prev => [...prev, newExpense]);
+        }
+      }
+      
+      // Clear the input value from state after successful save
+      setInputValues(prev => {
+        const updated = { ...prev };
+        delete updated[inputKey];
+        return updated;
+      });
+
+    } catch (error) {
+      console.error('Error saving expense:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save expense data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingCells(prev => ({
+        ...prev,
+        [inputKey]: false
+      }));
+    }
+  };
+
   // Find the renderCell function and enhance it to support descriptions
 const renderCell = (expense: any, column: any) => {
   const hasDescription = columnDescriptions[`${expense.id}-${column.key}`];
@@ -878,12 +809,10 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
                 )}
                 value={getExpenseAmount(date, category)}
                 onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
-                onBlur={(e) => {
-                  // Only save if value is different from what's in the database
-                  const expense = findExpenseForCell(date, category);
-                  const currentValue = e.target.value;
-                  const storedValue = expense ? expense.amount.toString() : "";
-                  if (currentValue !== storedValue) {
+                onBlur={() => {
+                  const inputKey = `${date.toISOString()}-${category}`;
+                  const value = inputValues[inputKey];
+                  if (value !== undefined) {
                     saveExpenseValue(date, category);
                   }
                 }}
@@ -947,14 +876,14 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
         <div className="flex justify-center items-center h-64">
           <div className="text-center">
             <svg className="animate-spin h-8 w-8 mx-auto mb-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
             <p>Loading expense data...</p>
           </div>
         </div>
       </Card>
-    )
+    );
   }
 
   const descriptionDialog = (
@@ -1112,8 +1041,8 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           onClick={() => {
-                            setCategoryToEdit({ oldName: category, newName: category })
-                            setIsEditCategoryDialogOpen(true)
+                            setCategoryToEdit({ oldName: category, newName: category });
+                            setIsEditCategoryDialogOpen(true);
                           }}
                         >
                           <Edit2 className="mr-2 h-4 w-4" />
@@ -1121,8 +1050,8 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => {
-                            setCategoryToDelete(category)
-                            setIsDeleteCategoryDialogOpen(true)
+                            setCategoryToDelete(category);
+                            setIsDeleteCategoryDialogOpen(true);
                           }}
                           className="text-red-600 focus:text-red-600"
                         >
@@ -1163,12 +1092,10 @@ const ExpenseCell = ({ date, category, value, onChange }: ExpenseCellProps) => {
                                 )}
                                 value={getExpenseAmount(date, category)}
                                 onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
-                                onBlur={(e) => {
-                                  // Only save if value is different from what's in the database
-                                  const expense = findExpenseForCell(date, category);
-                                  const currentValue = e.target.value;
-                                  const storedValue = expense ? expense.amount.toString() : "";
-                                  if (currentValue !== storedValue) {
+                                onBlur={() => {
+                                  const inputKey = `${date.toISOString()}-${category}`;
+                                  const value = inputValues[inputKey];
+                                  if (value !== undefined) {
                                     saveExpenseValue(date, category);
                                   }
                                 }}

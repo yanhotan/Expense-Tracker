@@ -23,7 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        <ThemeProvider>
           <div className="relative min-h-screen">
             {/* Theme toggle button positioned at the top-right */}
             <div className="absolute right-4 top-4 z-50">
