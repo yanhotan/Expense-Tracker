@@ -14,13 +14,12 @@ export function MonthlyExpenses({ data }: MonthlyExpensesProps) {
     month,
     total,
   }))
-
   return (
     <ChartContainer
       config={{
         total: {
           label: "Total Expenses",
-          color: "hsl(var(--chart-1))",
+          color: "hsl(203, 51%, 29%)",
         },
       }}
       className="h-full"
