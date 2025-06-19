@@ -5,9 +5,14 @@ import { createClient } from '@supabase/supabase-js';
 import expensesRouter from './expenses.js';
 import categoriesRouter from './categories.js';
 import analyticsRouter from './analytics.js';
+import sheetsRouter from './sheets.js';
 
 const app = express();
-app.use(cors());
+const corsOptions = {
+  origin: true, // Reflect request origin
+  credentials: true,
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
@@ -51,6 +56,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.use('/api/expenses', expensesRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/sheets', sheetsRouter);
 
 const PORT = 4000;
 app.listen(PORT, () => {

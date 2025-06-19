@@ -21,14 +21,8 @@ import {
 } from "./ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
 import { cn } from "../lib/utils"
-import {
-  useExpenses,
-  useCreateExpense,
-  useUpdateExpense,
-  useDeleteExpense,
-  useCategories
-} from "../lib/hooks"
-import { categoriesApi } from "../lib/api"
+// --- API-based imports ---
+import { expenseApi, categoriesApi } from "../lib/api"
 import type { Expense } from "../lib/types"
 
 interface ExpenseSpreadsheetProps {
@@ -55,18 +49,34 @@ export default function ExpenseSpreadsheet({
   const [descDialog, setDescDialog] = useState<{ open: boolean, expenseId: string, date: Date, category: string, value: string }>({ open: false, expenseId: "", date: new Date(), category: "", value: "" })
   const [columnDescriptions, setColumnDescriptions] = useState<Record<string, string>>({})
 
-  // --- Data fetching (React Query hooks) ---
-  const { data: expensesData, isLoading: expensesLoading } = useExpenses({
-    sheetId,
-    month: `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`
-  })
-  const { data: categoriesData, isLoading: categoriesLoading } = useCategories(sheetId)
-  const createExpenseMutation = useCreateExpense()
-  const updateExpenseMutation = useUpdateExpense()
-  const deleteExpenseMutation = useDeleteExpense()
+  // --- Data fetching (API-based, not React Query) ---
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [categories, setCategories] = useState<string[]>([])
 
-  const expenses: Expense[] = (expensesData && (expensesData as any).data ? (expensesData as any).data : expensesData) || []
-  const categories: string[] = (categoriesData && (categoriesData as any).data ? (categoriesData as any).data : categoriesData) || []
+  const fetchExpenses = async () => {
+    try {
+      const data = await expenseApi.getAll({ sheetId, month: `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}` })
+      setExpenses(data.data || [])
+    } catch (error) {
+      console.error("Error fetching expenses:", error)
+    }
+  }
+
+  const fetchCategories = async () => {
+    try {
+      const data = await categoriesApi.getAll(sheetId)
+      setCategories(data.data || [])
+    } catch (error) {
+      console.error("Error fetching categories:", error)
+    }
+  }
+
+  useEffect(() => {
+    if (sheetId) {
+      fetchExpenses()
+      fetchCategories()
+    }
+  }, [sheetId, currentMonth])
 
   // --- Date helpers ---
   const daysInMonth = eachDayOfInterval({
@@ -143,12 +153,12 @@ export default function ExpenseSpreadsheet({
       const existingExpense = findExpenseForCell(date, category)
       if (existingExpense) {
         if (amount === 0) {
-          await deleteExpenseMutation.mutateAsync(existingExpense.id)
+          await expenseApi.delete(existingExpense.id)
         } else {
-          await updateExpenseMutation.mutateAsync({ ...existingExpense, amount })
+          await expenseApi.update(existingExpense.id, { ...existingExpense, amount })
         }
       } else if (amount !== 0) {
-        await createExpenseMutation.mutateAsync({ date: date.toISOString(), category, amount, sheet_id: sheetId })
+        await expenseApi.create({ date: date.toISOString(), category, amount, sheet_id: sheetId })
       }
       setInputValues(prev => { const updated = { ...prev }; delete updated[cellKey]; return updated })
     } catch (error) {
@@ -186,7 +196,7 @@ export default function ExpenseSpreadsheet({
   }
 
   // --- UI ---
-  if (expensesLoading || categoriesLoading) {
+  if (!expenses.length || !categories.length) {
     return (
       <Card className="p-8">
         <div className="flex justify-center items-center h-64">

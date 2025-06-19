@@ -8,7 +8,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from "@/components/ui/use-toast"
 import { LockIcon, UnlockIcon, UserIcon, PlusCircle, Edit, MoreVertical } from "lucide-react"
 import { getExpenseSheets, verifySheetPin, setLastAccessedSheet, getLastAccessedSheet, createExpenseSheet, updateSheetName, type ExpenseSheet } from "@/lib/sheets"
-import { supabase, getCurrentUserId } from "@/lib/supabase"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 
 export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: string) => void }) {
@@ -32,10 +31,6 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
     async function loadSheets() {
       setIsLoading(true)
       try {
-        // Add debugging to check user authentication
-        const { data: { user } } = await supabase.auth.getUser()
-        console.log('Current user:', user ? `Authenticated as ${user.id}` : 'Not authenticated')
-        
         // First try to get sheets directly from the database
         const sheets = await getExpenseSheets()
         console.log('Fetched sheets:', sheets)
@@ -120,27 +115,12 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
     }
     
     try {
-      // Get user ID without authentication
-      const user_id = await getCurrentUserId();
-      console.log('Using user ID for refresh:', user_id);
-      
-      // Directly fetch sheets from database, bypassing any local cache
-      const { data, error } = await supabase
-        .from('expense_sheets')
-        .select('*');
-      
-      if (error) {
-        console.error('Error refreshing sheets from database:', error);
-        toast({
-          title: "Refresh failed",
-          description: "Could not retrieve your sheets from the database. Please try again.",
-          variant: "destructive",
-        });
-      } else if (data && data.length > 0) {
-        console.log(`Successfully refreshed ${data.length} sheets from database`);
-        
+      // Directly fetch sheets from backend API, bypassing any local cache
+      const sheets = await getExpenseSheets();
+      if (sheets && sheets.length > 0) {
+        console.log(`Successfully refreshed ${sheets.length} sheets from backend API`);
         // Convert to ExpenseSheet format and update state directly
-        const refreshedSheets: ExpenseSheet[] = data.map(sheet => ({
+        const refreshedSheets: ExpenseSheet[] = sheets.map((sheet: any) => ({
           id: sheet.id,
           name: sheet.name,
           pin: sheet.pin,
@@ -148,12 +128,9 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
           created_at: sheet.created_at,
           user_id: sheet.user_id
         }));
-        
-        // Update state directly with refreshed data
         setAvailableSheets(refreshedSheets);
-        
         // Restore sheets to localStorage for offline access
-        data.forEach(sheet => {
+        sheets.forEach((sheet: any) => {
           try {
             localStorage.setItem(`expense-tracker-sheet-${sheet.id}`, JSON.stringify({
               id: sheet.id,
@@ -167,12 +144,10 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
             console.warn(`Failed to sync sheet ${sheet.id} to localStorage:`, e);
           }
         });
-        
         toast({
           title: "Refresh successful",
-          description: `Retrieved ${data.length} sheets from the database.`,
+          description: `Retrieved ${sheets.length} sheets from the backend API.`,
         });
-        
         // Check if there's a last used sheet
         const lastSheetId = getLastAccessedSheet();
         if (lastSheetId) {
@@ -188,9 +163,8 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
       } else {
         toast({
           title: "No sheets found",
-          description: "No expense sheets were found in the database.",
+          description: "No expense sheets were found in the backend API.",
         });
-        // If no sheets in database but we have a locally stored sheet, try to reload using regular method
         setRefreshTrigger(prev => prev + 1);
       }
     } catch (error) {
@@ -200,7 +174,6 @@ export function SheetSelector({ onSelectSheet }: { onSelectSheet: (userId: strin
         description: "An unexpected error occurred during refresh.",
         variant: "destructive",
       });
-      // Fall back to the regular loading method
       setRefreshTrigger(prev => prev + 1);
     } finally {
       setIsLoading(false);

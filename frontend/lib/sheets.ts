@@ -1,6 +1,5 @@
 "use client"
 
-import { supabase, getCurrentUserId } from './supabase'
 import { v4 as uuidv4 } from 'uuid'
 
 export interface ExpenseSheet {
@@ -117,65 +116,71 @@ export function setLastAccessedSheet(sheetId: string): void {
 // Get all available expense sheets
 export async function getExpenseSheets(): Promise<ExpenseSheet[]> {
   const allSheets: ExpenseSheet[] = []
-  const user_id = await getCurrentUserId()
-  console.log('Getting expense sheets for user_id:', user_id)
+  
+  console.log('Getting expense sheets...');
   
   let databaseSuccess = false;
   
   // First, try to retrieve sheets from Supabase if user is authenticated
-  if (user_id !== '00000000-0000-0000-0000-000000000000' && !isServerRendering()) {
-    try {
-      console.log('Attempting to fetch sheets from Supabase database...');
-      const { data, error } = await supabase
-        .from('expense_sheets')
-        .select('*')
-        .eq('user_id', user_id)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.warn('Error fetching sheets from Supabase:', error);
-      } else if (data) {
-        console.log('Successfully fetched sheets from Supabase:', data.length);
-        
-        // Clear any stale sheet data in localStorage to avoid conflicts
-        if (data.length > 0) {
-          try {
-            const existingLocalSheetKeys = Object.keys(localStorage)
-              .filter(key => key.startsWith('expense-tracker-sheet-'));
-            
-            existingLocalSheetKeys.forEach(key => localStorage.removeItem(key));
-            console.log(`Cleared ${existingLocalSheetKeys.length} stale sheet entries from localStorage`);
-          } catch (e) {
-            console.warn('Error clearing localStorage sheets:', e);
-          }
-        }
-        
-        // Store sheets in localStorage as backup
-        data.forEach(sheet => {
-          try {
-            localStorage.setItem(`expense-tracker-sheet-${sheet.id}`, JSON.stringify({
-              id: sheet.id,
-              name: sheet.name,
-              pin: sheet.pin || null,
-              hasPin: sheet.has_pin,
-              created: sheet.created_at,
-              user_id: sheet.user_id
-            }));
-            console.log(`Synced sheet ${sheet.name} (${sheet.id}) to localStorage`);
-          } catch (e) {
-            console.warn(`Failed to sync sheet ${sheet.id} to localStorage:`, e);
-          }
-        });
-        
-        // Add all database sheets to our result array
-        allSheets.push(...data);
-        databaseSuccess = true;
-      }
-    } catch (e) {
-      console.error('Exception while fetching sheets from Supabase:', e)
+  try {
+    const response = await fetch('http://localhost:4000/api/sheets', {
+      method: 'GET',
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
-  } else {
-    console.log('Skipping database fetch - no authenticated user or server rendering');
+    
+    const data = await response.json();
+    // Defensive: handle if backend returns { data: [...] } or []
+    let sheetsArr: any[] = [];
+    if (Array.isArray(data)) {
+      sheetsArr = data;
+    } else if (data && Array.isArray(data.data)) {
+      sheetsArr = data.data;
+    } else {
+      // Not an array, log and skip
+      console.error('Unexpected response for sheets:', data);
+      sheetsArr = [];
+    }
+    console.log('Fetched sheets from backend API:', sheetsArr.length);
+    
+    // Clear any stale sheet data in localStorage to avoid conflicts
+    if (sheetsArr.length > 0) {
+      try {
+        const existingLocalSheetKeys = Object.keys(localStorage)
+          .filter(key => key.startsWith('expense-tracker-sheet-'));
+        
+        existingLocalSheetKeys.forEach(key => localStorage.removeItem(key));
+        console.log(`Cleared ${existingLocalSheetKeys.length} stale sheet entries from localStorage`);
+      } catch (e) {
+        console.warn('Error clearing localStorage sheets:', e);
+      }
+    }
+    
+    // Store sheets in localStorage as backup
+    sheetsArr.forEach((sheet: any) => {
+      try {
+        localStorage.setItem(`expense-tracker-sheet-${sheet.id}`, JSON.stringify({
+          id: sheet.id,
+          name: sheet.name,
+          pin: sheet.pin || null,
+          hasPin: sheet.has_pin,
+          created: sheet.created_at,
+          user_id: sheet.user_id
+        }));
+        console.log(`Synced sheet ${sheet.name} (${sheet.id}) to localStorage`);
+      } catch (e) {
+        console.warn(`Failed to sync sheet ${sheet.id} to localStorage:`, e);
+      }
+    });
+    
+    // Add all database sheets to our result array
+    allSheets.push(...sheetsArr);
+    databaseSuccess = true;
+  } catch (e) {
+    console.error('Exception while fetching sheets from backend API:', e)
   }
   
   // If database fetch failed or we're in server rendering, try localStorage
@@ -206,41 +211,46 @@ export async function getExpenseSheets(): Promise<ExpenseSheet[]> {
             };
             
             // Only include sheets for the current user
-            if (sheet.user_id === user_id || sheet.user_id === '00000000-0000-0000-0000-000000000000') {
+            if (sheet.user_id === '00000000-0000-0000-0000-000000000000') {
               console.log('Adding sheet from localStorage:', sheet.name);
               localSheets.push(sheet);
               
               // If database fetch failed, try to sync this local sheet to the database
-              if (!databaseSuccess && user_id !== '00000000-0000-0000-0000-000000000000') {
+              if (!databaseSuccess) {
                 (async () => {
                   try {
-                    const { data, error } = await supabase
-                      .from('expense_sheets')
-                      .select('id')
-                      .eq('id', sheet.id)
-                      .maybeSingle();
+                    const response = await fetch(`http://localhost:4000/api/sheets/${sheet.id}`, {
+                      method: 'GET',
+                      credentials: 'include'
+                    });
                     
-                    if (error) {
-                      console.warn(`Error checking if sheet ${sheet.id} exists in database:`, error);
-                      return;
+                    if (!response.ok) {
+                      throw new Error(`HTTP error! status: ${response.status}`);
                     }
+                    
+                    const data = await response.json();
                     
                     // If sheet doesn't exist in the database, sync it
                     if (!data) {
                       console.log(`Sheet ${sheet.id} not found in database, syncing...`);
-                      const { error: insertError } = await supabase
-                        .from('expense_sheets')
-                        .insert({
+                      const insertResponse = await fetch('http://localhost:4000/api/sheets', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
                           id: sheet.id,
                           name: sheet.name,
                           pin: sheet.pin,
                           has_pin: sheet.has_pin,
                           created_at: sheet.created_at,
-                          user_id: user_id
-                        });
-                        
-                      if (insertError) {
-                        console.warn(`Error syncing local sheet ${sheet.id} to database:`, insertError);
+                          user_id: '00000000-0000-0000-0000-000000000000'
+                        }),
+                        credentials: 'include'
+                      });
+                      
+                      if (!insertResponse.ok) {
+                        console.warn(`Error syncing local sheet ${sheet.id} to database:`);
                       } else {
                         console.log(`Successfully synced local sheet ${sheet.name} to database`);
                       }
@@ -279,99 +289,97 @@ export async function updateSheetName(sheetId: string, newName: string): Promise
     return false;
   }
 
-  // Get the current authenticated user ID
-  const user_id = await getCurrentUserId();
-  console.log(`Updating sheet ${sheetId} name to "${newName}", user: ${user_id}`);
+  console.log(`Updating sheet ${sheetId} name to "${newName}"`);
   
   let dbSuccess = false;
   let localSuccess = false;
 
   // Update in Supabase with retry mechanism
-  if (user_id !== '00000000-0000-0000-0000-000000000000') {
-    let retryCount = 0;
-    const maxRetries = 3;
-    
-    while (retryCount < maxRetries && !dbSuccess) {
-      try {
-        console.log(`Attempt ${retryCount + 1} to update sheet name in database`);
-        
-        // First check if the sheet exists and belongs to the user
-        const { data: sheetData, error: checkError } = await supabase
-          .from('expense_sheets')
-          .select('*')
-          .eq('id', sheetId)
-          .single();
-        
-        if (checkError) {
-          console.warn(`Error checking sheet existence (attempt ${retryCount + 1}):`, checkError);
-          retryCount++;
-          await new Promise(resolve => setTimeout(resolve, 500));
-          continue;
-        }
-        
-        console.log('Found sheet in database:', sheetData ? 'yes' : 'no');
-        
-        // If sheet exists, update it
-        if (sheetData) {
-          const { error: updateError } = await supabase
-            .from('expense_sheets')
-            .update({ name: newName })
-            .eq('id', sheetId);
+  let retryCount = 0;
+  const maxRetries = 3;
+  
+  while (retryCount < maxRetries && !dbSuccess) {
+    try {
+      console.log(`Attempt ${retryCount + 1} to update sheet name in database`);
+      
+      // First check if the sheet exists and belongs to the user
+      const response = await fetch(`http://localhost:4000/api/sheets/${sheetId}`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const sheetData = await response.json();
+      console.log('Found sheet in database:', sheetData ? 'yes' : 'no');
+      
+      // If sheet exists, update it
+      if (sheetData) {
+        const updateResponse = await fetch(`http://localhost:4000/api/sheets/${sheetId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ name: newName }),
+          credentials: 'include'
+        });
 
-          if (updateError) {
-            console.warn(`Error updating sheet name (attempt ${retryCount + 1}):`, updateError);
+        if (!updateResponse.ok) {
+          throw new Error(`HTTP error! status: ${updateResponse.status}`);
+        } else {
+          console.log('Sheet name updated successfully in database');
+          dbSuccess = true;
+          break;
+        }
+      } else {
+        // Sheet not found in database, try to insert it
+        console.log('Sheet not found in database, creating it');
+        
+        // Get sheet data from localStorage
+        const key = `expense-tracker-sheet-${sheetId}`;
+        const sheetDataStr = localStorage.getItem(key);
+        
+        if (sheetDataStr) {
+          const localSheetData = JSON.parse(sheetDataStr);
+          
+          // Create the sheet in the database
+          const insertResponse = await fetch('http://localhost:4000/api/sheets', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              id: sheetId,
+              name: newName, // Use the new name
+              pin: localSheetData.pin || null,
+              has_pin: !!localSheetData.pin || localSheetData.hasPin || false,
+              created_at: localSheetData.created || new Date().toISOString(),
+              user_id: '00000000-0000-0000-0000-000000000000'
+            }),
+            credentials: 'include'
+          });
+          
+          if (!insertResponse.ok) {
+            console.warn(`Error inserting sheet into database (attempt ${retryCount + 1}):`);
             retryCount++;
             await new Promise(resolve => setTimeout(resolve, 500));
           } else {
-            console.log('Sheet name updated successfully in database');
+            console.log('Sheet created successfully in database');
             dbSuccess = true;
             break;
           }
         } else {
-          // Sheet not found in database, try to insert it
-          console.log('Sheet not found in database, creating it');
-          
-          // Get sheet data from localStorage
-          const key = `expense-tracker-sheet-${sheetId}`;
-          const sheetDataStr = localStorage.getItem(key);
-          
-          if (sheetDataStr) {
-            const localSheetData = JSON.parse(sheetDataStr);
-            
-            // Create the sheet in the database
-            const { error: insertError } = await supabase
-              .from('expense_sheets')
-              .insert({
-                id: sheetId,
-                name: newName, // Use the new name
-                pin: localSheetData.pin || null,
-                has_pin: !!localSheetData.pin || localSheetData.hasPin || false,
-                created_at: localSheetData.created || new Date().toISOString(),
-                user_id: user_id
-              });
-              
-            if (insertError) {
-              console.warn(`Error inserting sheet into database (attempt ${retryCount + 1}):`, insertError);
-              retryCount++;
-              await new Promise(resolve => setTimeout(resolve, 500));
-            } else {
-              console.log('Sheet created successfully in database');
-              dbSuccess = true;
-              break;
-            }
-          } else {
-            console.warn('Sheet not found in localStorage either');
-            retryCount++;
-          }
+          console.warn('Sheet not found in localStorage either');
+          retryCount++;
         }
-      } catch (error) {
-        console.error(`Exception while updating sheet name (attempt ${retryCount + 1}):`, error);
-        retryCount++;
-        await new Promise(resolve => setTimeout(resolve, 500));
       }
+    } catch (error) {
+      console.error(`Exception while updating sheet name (attempt ${retryCount + 1}):`, error);
+      retryCount++;
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
-  } else {
-    console.warn('Cannot update database: no authenticated user');
   }
 
   // Always update localStorage regardless of database result
@@ -398,10 +406,6 @@ export async function updateSheetName(sheetId: string, newName: string): Promise
 
 // Save a consistent format in localStorage to fix sheet detection
 export async function createExpenseSheet(sheet: { name: string; pin?: string }): Promise<ExpenseSheet | null> {
-  // Get the current authenticated user ID
-  const user_id = await getCurrentUserId();
-  console.log('Creating sheet with user_id:', user_id);
-  
   // During SSR or build, don't try to save
   if (isServerRendering()) {
     return null;
@@ -413,7 +417,7 @@ export async function createExpenseSheet(sheet: { name: string; pin?: string }):
     pin: sheet.pin || null,
     has_pin: !!sheet.pin,
     created_at: new Date().toISOString(),
-    user_id
+    user_id: '00000000-0000-0000-0000-000000000000'
   };
   
   console.log('New sheet data prepared:', {...newSheet, pin: newSheet.pin ? '****' : null});
@@ -426,7 +430,7 @@ export async function createExpenseSheet(sheet: { name: string; pin?: string }):
       pin: sheet.pin || null,
       hasPin: !!sheet.pin,
       created: newSheet.created_at,
-      user_id
+      user_id: '00000000-0000-0000-0000-000000000000'
     }));
     
     // Also save this as the last accessed sheet
@@ -450,21 +454,22 @@ export async function createExpenseSheet(sheet: { name: string; pin?: string }):
   while (retryCount < maxRetries) {
     try {
       console.log(`Attempt ${retryCount + 1} to insert into Supabase expense_sheets table`);
-      const { data, error } = await supabase
-        .from('expense_sheets')
-        .insert(newSheet)
-        .select();
+      const response = await fetch('http://localhost:4000/api/sheets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newSheet),
+        credentials: 'include'
+      });
 
-      if (error) {
-        console.warn(`Supabase error creating sheet (attempt ${retryCount + 1}):`, error);
-        retryCount++;
-        // Wait a bit before retrying
-        await new Promise(resolve => setTimeout(resolve, 500));
-        continue;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      console.log('Sheet created successfully in Supabase:', data?.[0]?.id);
-      savedSheet = data?.[0];
+      const data = await response.json();
+      console.log('Sheet created successfully in Supabase:', data?.id);
+      savedSheet = data;
       break;
     } catch (error) {
       console.error(`Exception while creating sheet (attempt ${retryCount + 1}):`, error);
@@ -485,16 +490,6 @@ export async function createExpenseSheet(sheet: { name: string; pin?: string }):
         { sheet_id: savedSheet.id, category: "others", display_order: 5 }
       ];
       
-      const { error } = await supabase
-        .from('sheet_categories')
-        .insert(defaultCategories);
-        
-      if (error) {
-        console.warn('Error adding default categories to database:', error);
-        // Categories will still be available from localStorage
-      } else {
-        console.log('Default categories saved to database');
-      }
     } catch (catError) {
       console.error('Exception while saving categories:', catError);
     }
@@ -513,21 +508,21 @@ export async function verifySheetPin(sheetId: string, pin: string): Promise<bool
   }
 
   try {
-    const { data, error } = await supabase
-      .from('expense_sheets')
-      .select('pin')
-      .eq('id', sheetId)
-      .single();
+    const response = await fetch(`http://localhost:4000/api/sheets/${sheetId}/verify-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ pin }),
+      credentials: 'include'
+    });
 
-    if (error) {
-      console.warn('Supabase error, falling back to localStorage:', error);
-      // Try localStorage
-      const sheets = getLocalSheets();
-      const sheet = sheets.find(s => s.id === sheetId);
-      return sheet?.pin === pin;
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    return data?.pin === pin;
+    const result = await response.json();
+    return result.valid === true;
   } catch (error) {
     console.warn('Failed to verify PIN in Supabase, using localStorage fallback:', error);
     // Try localStorage

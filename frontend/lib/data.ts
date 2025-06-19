@@ -1,6 +1,5 @@
 "use client"
 
-import { supabase, getCurrentUserId } from './supabase'
 import { v4 as uuidv4 } from 'uuid'
 
 export interface Expense {
@@ -44,9 +43,6 @@ const saveLocalExpenses = (expenses: Expense[]): void => {
 
 // Get all expenses from Supabase
 export async function getExpenses(sheetId?: string): Promise<Expense[]> {
-  // Get the current authenticated user ID
-  const user_id = await getCurrentUserId();
-
   // During build or SSG processes, use dummy data
   if (isServerRendering()) {
     return [];
@@ -62,22 +58,22 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
   let databaseData: Expense[] = [];
 
   try {
-    let query = supabase
-      .from('expenses')
-      .select('*')
-      .eq('user_id', user_id);
+    let query = `http://localhost:4000/api/expenses?user_id=eq.00000000-0000-0000-0000-000000000000`;
       
     // Filter by sheet_id if provided
     if (sheetId) {
-      query = query.eq('sheet_id', sheetId);
+      query += `&sheet_id=eq.${sheetId}`;
     }
     
     // Sort by created_at (when the expense was added) instead of date
     // This preserves the order in which expenses were entered
-    const { data, error } = await query.order('created_at', { ascending: false });
+    query += `&order=created_at.desc`;
 
-    if (error) {
-      console.warn('Supabase error when fetching expenses:', error);
+    const response = await fetch(query);
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.warn('Supabase error when fetching expenses:', data);
       databaseError = true;
     } else {
       databaseData = data || [];
@@ -108,8 +104,19 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
             if (sheetId && missingExpense.sheet_id !== sheetId) continue;
             
             try {
-              const { error } = await supabase.from('expenses').insert(missingExpense);
-              if (!error) {
+              const response = await fetch('http://localhost:4000/api/expenses', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(missingExpense),
+              });
+              
+              const data = await response.json();
+              
+              if (!response.ok) {
+                console.warn('Failed to sync missing expense:', data);
+              } else {
                 console.log('Successfully synced missing expense:', missingExpense.id);
                 databaseData.push(missingExpense);
               }
@@ -138,14 +145,10 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
 
 // Add a new expense with improved reliability
 export async function addExpense(expense: Expense, sheetId: string): Promise<boolean> {
-  // Get the current authenticated user ID
-  const user_id = await getCurrentUserId();
-  
   // Use the exact date from the expense for strict date ordering
   const newExpense = {
     ...expense,
     id: expense.id || uuidv4(),
-    user_id,
     sheet_id: sheetId,
     // Store the exact date string for proper date matching
     date: expense.date,
@@ -170,13 +173,18 @@ export async function addExpense(expense: Expense, sheetId: string): Promise<boo
   while (retryCount < maxRetries && !savedSuccessfully) {
     try {
       console.log(`Attempt ${retryCount + 1} to insert expense into Supabase`, newExpense.id);
-      const { data, error } = await supabase
-        .from('expenses')
-        .insert(newExpense)
-        .select();
+      const response = await fetch('http://localhost:4000/api/expenses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newExpense),
+      });
       
-      if (error) {
-        console.warn(`Supabase error on attempt ${retryCount + 1}:`, error);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.warn(`Supabase error on attempt ${retryCount + 1}:`, data);
         retryCount++;
         // Wait a bit before retrying
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -208,13 +216,13 @@ export async function deleteExpense(id: string): Promise<void> {
   }
 
   try {
-    const { error } = await supabase
-      .from('expenses')
-      .delete()
-      .eq('id', id)
-
-    if (error) {
-      console.warn('Supabase delete error, falling back to localStorage:', error);
+    const response = await fetch(`http://localhost:4000/api/expenses/${id}`, {
+      method: 'DELETE',
+    });
+    
+    if (!response.ok) {
+      const data = await response.json();
+      console.warn('Supabase delete error, falling back to localStorage:', data);
       // Fall back to localStorage
       const expenses = getLocalExpenses();
       const updatedExpenses = expenses.filter(expense => expense.id !== id);
@@ -238,13 +246,17 @@ export async function updateExpense(updatedExpense: Expense): Promise<void> {
   }
 
   try {
-    const { error } = await supabase
-      .from('expenses')
-      .update(updatedExpense)
-      .eq('id', updatedExpense.id)
-
-    if (error) {
-      console.warn('Supabase update error, falling back to localStorage:', error);
+    const response = await fetch(`http://localhost:4000/api/expenses/${updatedExpense.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updatedExpense),
+    });
+    
+    if (!response.ok) {
+      const data = await response.json();
+      console.warn('Supabase update error, falling back to localStorage:', data);
       // Fall back to localStorage
       const expenses = getLocalExpenses();
       const updatedExpenses = expenses.map(expense => 
@@ -438,17 +450,14 @@ export async function getSheetCategories(sheetId: string): Promise<string[]> {
   let dbError = false;
   
   try {
-    const { data, error } = await supabase
-      .from('sheet_categories')
-      .select('category, display_order')
-      .eq('sheet_id', sheetId)
-      .order('display_order');
-      
-    if (error) {
-      console.warn('Error fetching categories from database:', error);
+    const response = await fetch(`http://localhost:4000/api/sheet_categories?sheet_id=eq.${sheetId}`);
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.warn('Error fetching categories from database:', data);
       dbError = true;
     } else if (data && data.length > 0) {
-      dbCategories = data.map(row => row.category);
+      dbCategories = data.map((row: any) => row.category);
       console.log('Categories fetched from database:', dbCategories);
       
       // Sync to localStorage as backup
@@ -480,13 +489,18 @@ export async function getSheetCategories(sheetId: string): Promise<string[]> {
             }));
             
             // Try to sync back to database
-            const { error } = await supabase
-              .from('sheet_categories')
-              .insert(categoriesToSync)
-              .select();
-              
-            if (error) {
-              console.warn('Failed to sync categories to database:', error);
+            const response = await fetch('http://localhost:4000/api/sheet_categories', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(categoriesToSync),
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+              console.warn('Failed to sync categories to database:', data);
             } else {
               console.log('Categories synced from localStorage to database');
             }
@@ -518,10 +532,13 @@ export async function saveSheetCategories(categories: string[], sheetId: string)
     // Then try to save to database
     try {
       // First, delete existing categories for this sheet
-      await supabase
-        .from('sheet_categories')
-        .delete()
-        .eq('sheet_id', sheetId);
+      await fetch(`http://localhost:4000/api/sheet_categories`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sheet_id: sheetId }),
+      });
       
       // Then insert new ones
       const categoriesToSave = categories.map((category, index) => ({
@@ -530,12 +547,18 @@ export async function saveSheetCategories(categories: string[], sheetId: string)
         display_order: index + 1
       }));
       
-      const { error } = await supabase
-        .from('sheet_categories')
-        .insert(categoriesToSave);
+      const response = await fetch('http://localhost:4000/api/sheet_categories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(categoriesToSave),
+      });
       
-      if (error) {
-        console.warn('Error saving categories to database:', error);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.warn('Error saving categories to database:', data);
       } else {
         console.log('Categories saved to database successfully');
       }
