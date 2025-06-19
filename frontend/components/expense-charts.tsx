@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ExpensesByCategory } from "@/components/charts/expenses-by-category"
-import { MonthlyExpenses } from "@/components/charts/monthly-expenses"
-import { getExpenses } from "@/lib/data"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
+import { ExpensesByCategory } from "./charts/expenses-by-category"
+import { MonthlyExpenses } from "./charts/monthly-expenses"
+import { getExpenses } from "../lib/data"
 
 export function ExpenseCharts({ sheetId }: { sheetId: string }) {
   const [categoryTotals, setCategoryTotals] = useState<Record<string, number>>({})

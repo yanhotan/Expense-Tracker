@@ -4,7 +4,7 @@ import { useState } from "react"
 import { format } from "date-fns"
 import { Edit, Trash2 } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import { Button } from "./ui/button"
 import {
   Dialog,
   DialogContent,
@@ -12,13 +12,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { toast } from "@/components/ui/use-toast"
-import { type Expense, deleteExpense, updateExpense, getCategoryColor, getCategories } from "@/lib/data"
+} from "./ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
+import { Input } from "./ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table"
+import { toast } from "./ui/use-toast"
+import { type Expense, deleteExpense, updateExpense, getCategoryColor, getCategories } from "../lib/data"
 import { useRouter } from "next/navigation"
 
 interface ExpenseTableProps {
