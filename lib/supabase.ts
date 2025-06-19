@@ -23,10 +23,12 @@ export const executeSetupScript = async (supabaseClient: typeof supabase) => {
 export const getCurrentUserId = async (): Promise<string> => {
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    return user?.id || 'anonymous'
+    // Return a valid UUID for anonymous users instead of a string
+    return user?.id || '00000000-0000-0000-0000-000000000000'
   } catch (error) {
     console.error('Error getting user:', error)
-    return 'anonymous'
+    // Return a fixed UUID for anonymous users
+    return '00000000-0000-0000-0000-000000000000'
   }
 }
 
@@ -88,7 +90,7 @@ export type Tables = {
       name: string
       pin?: string | null
       has_pin?: boolean
-      user_id: string
+      user_id?: string
       created_at?: string
     }
     Update: {

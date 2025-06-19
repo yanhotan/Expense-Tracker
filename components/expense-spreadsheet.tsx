@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from "date-fns"
 import { PlusCircle, Save, Edit2, Trash2 } from "lucide-react"
 import { v4 as uuidv4 } from 'uuid'
+import debounce from 'lodash.debounce'
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -20,7 +21,9 @@ import {
   getCategories,
   addCategory,
   removeCategory,
-  updateCategoryName
+  updateCategoryName,
+  getSheetCategories,
+  saveSheetCategories
 } from "@/lib/data"
 import {
   Dialog,
@@ -45,6 +48,12 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
   const [isDeleteCategoryDialogOpen, setIsDeleteCategoryDialogOpen] = useState(false)
   const [categoryToDelete, setCategoryToDelete] = useState("")
 
+  // State to track all input values before saving
+  const [inputValues, setInputValues] = useState<Record<string, string | undefined>>({});
+  
+  // State to track cells that are currently being saved
+  const [savingCells, setSavingCells] = useState<Record<string, boolean>>({});
+
   // Generate dates for the current month
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(currentMonth),
@@ -64,8 +73,10 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
         // Load expenses for this specific sheet
         const expenseData = await getExpenses(sheetId)
         setExpenses(expenseData)
-        const storedCategories = getCategories()
-        setCategories(storedCategories)
+        
+        // Load sheet-specific categories
+        const sheetCategories = await getSheetCategories(sheetId)
+        setCategories(sheetCategories)
       } catch (error) {
         console.error('Failed to load expenses:', error)
         toast({
@@ -81,70 +92,190 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
     loadExpenses()
   }, [sheetId]) // Re-run when sheet changes
 
-  // Handle expense input change with auto-save
-  const handleExpenseChange = async (date: Date, category: string, value: string) => {
-    if (!sheetId) {
-      console.warn('No sheet ID provided, cannot save expense')
-      return
-    }
+  // Create a debounced save function for auto-saving
+  const debouncedSaveExpense = useCallback(
+    debounce((date: Date, category: string) => {
+      saveExpenseValue(date, category);
+    }, 800), // Auto-save after 800ms of inactivity
+    [] // Remove dependencies to prevent recreation of debounce function
+  );
+
+  // Handle expense input change - with debounced auto-save
+  const handleExpenseInputChange = (date: Date, category: string, value: string) => {
+    const inputKey = `${date.toISOString()}-${category}`;
     
-    const amount = value === "" ? 0 : Number.parseFloat(value)
-    if (isNaN(amount)) return
+    // Store the current input value without triggering an immediate save
+    setInputValues(prev => ({
+      ...prev,
+      [inputKey]: value
+    }));
 
-    setIsSaving(true)
+    // Trigger auto-save after short delay
+    debouncedSaveExpense(date, category);
+  };
+
+  // Handle save action when input is complete
+  const saveExpenseValue = async (date: Date, category: string) => {
+    const inputKey = `${date.toISOString()}-${category}`;
+    const value = inputValues[inputKey] || "";
+    
+    // Mark this cell as saving
+    setSavingCells(prev => ({
+      ...prev,
+      [inputKey]: true
+    }));
+    
     try {
-      // Find if there's an existing expense for this date and category
-      const existingExpense = expenses.find((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
+      const amount = value === "" ? 0 : Number.parseFloat(value);
+      if (isNaN(amount)) {
+        // Invalid number input, revert to previous value
+        console.log("Invalid number input, ignoring save");
+        return;
+      }
+      
+      // Format the date in ISO format for consistent date matching
+      const dateISO = new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+        12, 0, 0 // Set to noon to avoid timezone issues
+      ).toISOString();
 
-      if (existingExpense) {
-        if (amount === 0) {
-          // Delete the expense if amount is 0
-          await deleteExpense(existingExpense.id)
-          
-          // Update local state
-          setExpenses(prev => prev.filter(exp => exp.id !== existingExpense.id))
-        } else {
-          // Update the expense
-          const updatedExpense = {
-            ...existingExpense,
-            amount
-          }
-          await updateExpense(updatedExpense)
-          
-          // Update local state
-          setExpenses(prev => prev.map(exp => 
-            exp.id === existingExpense.id ? updatedExpense : exp
-          ))
+      // New approach: First find ALL expenses for this date and category (to handle duplicates)
+      const matchingExpenses = expenses.filter(
+        (exp) => {
+          const expDate = new Date(exp.date);
+          return (
+            expDate.getFullYear() === date.getFullYear() &&
+            expDate.getMonth() === date.getMonth() &&
+            expDate.getDate() === date.getDate() &&
+            exp.category === category
+          );
         }
-      } else if (amount > 0) {
-        // Add new expense with the sheet_id
+      );
+
+      // Execute appropriate action based on input and existing data
+      if (matchingExpenses.length > 0) {
+        // If we have multiple matching expenses, delete all but the most recent one
+        if (matchingExpenses.length > 1) {
+          console.log(`Found ${matchingExpenses.length} duplicate expenses for ${category} on ${format(date, "MMM dd")}. Cleaning up...`);
+          
+          // Sort by created_at in descending order (newest first)
+          const sorted = [...matchingExpenses].sort((a, b) => {
+            const dateA = new Date(a.created_at || 0);
+            const dateB = new Date(b.created_at || 0);
+            return dateB.getTime() - dateA.getTime();
+          });
+          
+          // Keep only the most recent one for updating
+          const primaryExpense = sorted[0];
+          
+          // Delete all duplicates
+          for (const dupe of sorted.slice(1)) {
+            await deleteExpense(dupe.id);
+            console.log(`Deleted duplicate expense: ${dupe.id}`);
+          }
+          
+          // Update expenses array in state
+          setExpenses(prev => prev.filter(exp => !sorted.slice(1).some(dupe => dupe.id === exp.id)));
+          
+          // Continue with the primary expense
+          if (amount === 0) {
+            // Delete the expense if amount is 0
+            await deleteExpense(primaryExpense.id);
+            
+            // Update local state immediately
+            setExpenses(prev => prev.filter(exp => exp.id !== primaryExpense.id));
+            console.log(`Deleted expense for ${category} on ${format(date, "MMM dd")}`);
+          } else {
+            // Update the expense
+            const updatedExpense = {
+              ...primaryExpense,
+              amount
+            };
+            await updateExpense(updatedExpense);
+            
+            // Update local state immediately
+            setExpenses(prev => prev.map(exp => 
+              exp.id === primaryExpense.id ? updatedExpense : exp
+            ));
+            console.log(`Updated expense for ${category} on ${format(date, "MMM dd")} to $${amount}`);
+          }
+        } else {
+          // Just one expense found, proceed normally
+          const existingExpense = matchingExpenses[0];
+          
+          if (amount === 0) {
+            // Delete the expense if amount is 0
+            await deleteExpense(existingExpense.id);
+            
+            // Update local state immediately
+            setExpenses(prev => prev.filter(exp => exp.id !== existingExpense.id));
+            console.log(`Deleted expense for ${category} on ${format(date, "MMM dd")}`);
+          } else {
+            // Update the expense
+            const updatedExpense = {
+              ...existingExpense,
+              amount
+            };
+            await updateExpense(updatedExpense);
+            
+            // Update local state immediately
+            setExpenses(prev => prev.map(exp => 
+              exp.id === existingExpense.id ? updatedExpense : exp
+            ));
+            console.log(`Updated expense for ${category} on ${format(date, "MMM dd")} to $${amount}`);
+          }
+        }
+      } else if (amount !== 0) {
+        // Add new expense with the sheet_id (now handling both positive and negative values)
         const newExpense = {
           id: uuidv4(),
-          date: date.toISOString(),
+          date: dateISO,
           amount,
           category,
-          description: `Expense on ${format(date, "MMM dd")}`,
-          sheet_id: sheetId, // Associate with the current sheet
-        }
-        await addExpense(newExpense, sheetId)
+          description: amount > 0 
+            ? `Expense on ${format(date, "MMM dd")}` 
+            : `Income/Return on ${format(date, "MMM dd")}`,
+          sheet_id: sheetId,
+        };
         
-        // Update local state
-        setExpenses(prev => [...prev, newExpense])
+        // First update local state immediately (optimistic update)
+        setExpenses(prev => [...prev, newExpense]);
+        console.log(`Added new ${amount > 0 ? 'expense' : 'income/return'} for ${category} on ${format(date, "MMM dd")}: $${amount}`);
+        
+        // Then save to database with retries
+        const saved = await addExpense(newExpense, sheetId);
+        
+        // If failed to save to database after retries, show a toast notification
+        if (!saved) {
+          toast({
+            title: "Warning",
+            description: "Data saved locally but not yet to database. Will retry when connection improves.",
+            variant: "default",
+          });
+        }
       }
     } catch (error) {
-      console.error('Error saving expense:', error)
+      console.error('Error saving expense:', error);
       toast({
         title: "Error",
-        description: "Failed to save expense data. Please try again.",
+        description: "Failed to save expense data. Your changes have been stored locally and will sync later.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsSaving(false)
+      // Mark this cell as no longer saving
+      setSavingCells(prev => ({
+        ...prev,
+        [inputKey]: false
+      }));
     }
-  }
+  };
 
   // Add new category
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
+    if (!sheetId) return;
+    
     if (newCategoryName.trim() === "") {
       toast({
         title: "Invalid category name",
@@ -165,19 +296,36 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
       return
     }
 
-    addCategory(normalizedName)
-    setCategories([...categories, normalizedName])
-    setNewCategoryName("")
-    setIsAddCategoryDialogOpen(false)
+    try {
+      // Add the category with the sheet ID to make it sheet-specific
+      addCategory(normalizedName, sheetId)
+      
+      // Update local state
+      setCategories([...categories, normalizedName])
+      setNewCategoryName("")
+      setIsAddCategoryDialogOpen(false)
 
-    toast({
-      title: "Category added",
-      description: `The category "${newCategoryName}" has been added successfully.`,
-    })
+      // Save to database
+      await saveSheetCategories([...categories, normalizedName], sheetId)
+
+      toast({
+        title: "Category added",
+        description: `The category "${newCategoryName}" has been added successfully.`,
+      })
+    } catch (error) {
+      console.error('Error adding category:', error)
+      toast({
+        title: "Error",
+        description: "Failed to add category. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   // Edit category
-  const handleEditCategory = () => {
+  const handleEditCategory = async () => {
+    if (!sheetId) return;
+    
     if (categoryToEdit.newName.trim() === "") {
       toast({
         title: "Invalid category name",
@@ -198,37 +346,97 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
       return
     }
 
-    updateCategoryName(categoryToEdit.oldName, normalizedName)
-    setCategories(categories.map((cat) => (cat === categoryToEdit.oldName ? normalizedName : cat)))
-    setIsEditCategoryDialogOpen(false)
+    try {
+      // Update with sheet ID
+      updateCategoryName(categoryToEdit.oldName, normalizedName, sheetId)
+      
+      // Update local state
+      const updatedCategories = categories.map((cat) => 
+        (cat === categoryToEdit.oldName ? normalizedName : cat)
+      )
+      setCategories(updatedCategories)
+      setIsEditCategoryDialogOpen(false)
 
-    toast({
-      title: "Category updated",
-      description: `The category has been renamed to "${categoryToEdit.newName}".`,
-    })
+      // Save to database
+      await saveSheetCategories(updatedCategories, sheetId)
+
+      toast({
+        title: "Category updated",
+        description: `The category has been renamed to "${categoryToEdit.newName}".`,
+      })
+    } catch (error) {
+      console.error('Error updating category:', error)
+      toast({
+        title: "Error",
+        description: "Failed to update category. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   // Delete category
-  const handleDeleteCategory = () => {
-    removeCategory(categoryToDelete)
-    setCategories(categories.filter((cat) => cat !== categoryToDelete))
-    setIsDeleteCategoryDialogOpen(false)
+  const handleDeleteCategory = async () => {
+    if (!sheetId) return;
+    
+    try {
+      // Remove with sheet ID
+      removeCategory(categoryToDelete, sheetId)
+      
+      // Update local state
+      const updatedCategories = categories.filter((cat) => cat !== categoryToDelete)
+      setCategories(updatedCategories)
+      setIsDeleteCategoryDialogOpen(false)
 
-    toast({
-      title: "Category deleted",
-      description: `The category "${categoryToDelete}" has been deleted.`,
-    })
+      // Save to database
+      await saveSheetCategories(updatedCategories, sheetId)
+
+      toast({
+        title: "Category deleted",
+        description: `The category "${categoryToDelete}" has been deleted.`,
+      })
+    } catch (error) {
+      console.error('Error deleting category:', error)
+      toast({
+        title: "Error",
+        description: "Failed to delete category. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   // Get expense amount for a specific date and category
   const getExpenseAmount = (date: Date, category: string): string => {
-    const expense = expenses.find((exp) => isSameDay(new Date(exp.date), date) && exp.category === category)
-    return expense ? expense.amount.toString() : ""
+    const inputKey = `${date.toISOString()}-${category}`;
+    
+    // If there's a pending input value, always use that first
+    // This ensures user input is never lost during typing
+    if (inputValues[inputKey] !== undefined) {
+      return inputValues[inputKey] || "";
+    }
+    
+    // Otherwise find the expense in the expenses array
+    const expense = expenses.find((exp) => 
+      isSameDay(new Date(exp.date), date) && exp.category === category
+    );
+    
+    return expense ? expense.amount.toString() : "";
   }
 
-  // Calculate daily totals
+  // Calculate daily totals - fixed to avoid double counting
   const getDailyTotal = (date: Date): number => {
-    return expenses.filter((exp) => isSameDay(new Date(exp.date), date)).reduce((sum, exp) => sum + exp.amount, 0)
+    // Get all expenses for this date from the main expenses array
+    const dayExpenses = expenses.filter((exp) => isSameDay(new Date(exp.date), date));
+    
+    // Create a Map to only count one expense per category for this date
+    const categoryAmounts = new Map<string, number>();
+    
+    // Loop through each saved expense and update the map
+    dayExpenses.forEach(exp => {
+      categoryAmounts.set(exp.category, exp.amount);
+    });
+    
+    // Calculate total from the unique category values
+    return Array.from(categoryAmounts.values()).reduce((sum, amount) => sum + amount, 0);
   }
 
   // Calculate category totals
@@ -240,6 +448,18 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
   const getGrandTotal = (): number => {
     return expenses.reduce((sum, exp) => sum + exp.amount, 0)
   }
+
+  // Format currency with proper color styling based on value
+  const formatCurrency = (amount: number): React.ReactNode => {
+    const formatted = new Intl.NumberFormat("en-US", { 
+      style: "currency", 
+      currency: "USD" 
+    }).format(amount);
+    
+    return amount < 0 
+      ? <span className="text-green-600">{formatted}</span> 
+      : <span>{formatted}</span>;
+  };
 
   if (isLoading) {
     return (
@@ -367,26 +587,42 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
                       <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
                       <Input
                         type="number"
-                        min="0"
                         step="0.01"
                         placeholder="0.00"
                         className="pl-7"
                         value={getExpenseAmount(date, category)}
-                        onChange={(e) => handleExpenseChange(date, category, e.target.value)}
+                        onChange={(e) => handleExpenseInputChange(date, category, e.target.value)}
+                        onBlur={() => saveExpenseValue(date, category)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            saveExpenseValue(date, category);
+                            // Move to the next input when Enter is pressed
+                            // Add proper type casting to access DOM methods
+                            const element = e.target as HTMLElement;
+                            const nextInput = element.closest('tr')?.nextElementSibling?.querySelector('input');
+                            if (nextInput) {
+                              nextInput.focus();
+                            }
+                          }
+                        }}
+                        // Disable the loading indication during typing
+                        autoComplete="off"
                       />
-                      {isSaving && <div className="absolute right-2 top-2 h-4 w-4">
-                        <svg className="animate-spin h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                      </div>}
+                      {savingCells[`${date.toISOString()}-${category}`] && (
+                        <div className="absolute right-2 top-2 h-4 w-4">
+                          <svg className="animate-spin h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        </div>
+                      )}
                     </div>
                   </TableCell>
                 ))}
 
                 <TableCell className="text-right font-medium">
-                  {getDailyTotal(date) > 0
-                    ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(getDailyTotal(date))
+                  {getDailyTotal(date) !== 0
+                    ? formatCurrency(getDailyTotal(date))
                     : "-"}
                 </TableCell>
               </TableRow>
@@ -398,14 +634,12 @@ export function ExpenseSpreadsheet({ sheetId }: { sheetId: string }) {
 
               {categories.map((category) => (
                 <TableCell key={`total-${category}`} className="font-medium">
-                  {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
-                    getCategoryTotal(category),
-                  )}
+                  {formatCurrency(getCategoryTotal(category))}
                 </TableCell>
               ))}
 
               <TableCell className="text-right font-bold">
-                {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(getGrandTotal())}
+                {formatCurrency(getGrandTotal())}
               </TableCell>
             </TableRow>
           </TableBody>

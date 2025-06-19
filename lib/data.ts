@@ -51,6 +51,15 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
   if (isServerRendering()) {
     return [];
   }
+  
+  // Get local expenses first as a fallback if database call fails
+  const localExpenses = getLocalExpenses();
+  const filteredLocalExpenses = sheetId 
+    ? localExpenses.filter(exp => exp.sheet_id === sheetId)
+    : localExpenses;
+    
+  let databaseError = false;
+  let databaseData: Expense[] = [];
 
   try {
     let query = supabase
@@ -63,62 +72,132 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
       query = query.eq('sheet_id', sheetId);
     }
     
-    const { data, error } = await query.order('date', { ascending: false });
+    // Sort by created_at (when the expense was added) instead of date
+    // This preserves the order in which expenses were entered
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
-      console.warn('Supabase error, falling back to localStorage:', error);
-      const allExpenses = getLocalExpenses();
-      return sheetId 
-        ? allExpenses.filter(exp => exp.sheet_id === sheetId)
-        : allExpenses;
+      console.warn('Supabase error when fetching expenses:', error);
+      databaseError = true;
+    } else {
+      databaseData = data || [];
+      console.log('Successfully fetched expenses from database:', databaseData.length);
+      
+      // Check for and clean up any duplicate expenses
+      if (databaseData.length > 0) {
+        const dedupedData = deduplicateExpenses(databaseData);
+        if (dedupedData.length < databaseData.length) {
+          console.log(`Removed ${databaseData.length - dedupedData.length} duplicate expenses`);
+          databaseData = dedupedData;
+        }
+      }
+      
+      // If we have database data and local data, try to merge any missing items
+      if (databaseData.length > 0 && localExpenses.length > 0) {
+        // Find any expenses in localStorage that are not in the database
+        const missingExpenses = localExpenses.filter(localExp => 
+          !databaseData.some(dbExp => dbExp.id === localExp.id)
+        );
+        
+        // If we have expenses that didn't make it to the database, try to save them now
+        if (missingExpenses.length > 0) {
+          console.log('Found missing expenses in localStorage that need to be synced:', missingExpenses.length);
+          
+          // Try to save each missing expense to the database
+          for (const missingExpense of missingExpenses) {
+            if (sheetId && missingExpense.sheet_id !== sheetId) continue;
+            
+            try {
+              const { error } = await supabase.from('expenses').insert(missingExpense);
+              if (!error) {
+                console.log('Successfully synced missing expense:', missingExpense.id);
+                databaseData.push(missingExpense);
+              }
+            } catch (syncError) {
+              console.warn('Failed to sync missing expense:', syncError);
+            }
+          }
+        }
+      }
+      
+      // Return database data as the source of truth if available
+      return databaseData;
     }
-
-    return data || [];
   } catch (error) {
-    console.warn('Failed to fetch expenses from Supabase:', error);
-    const allExpenses = getLocalExpenses();
-    return sheetId 
-      ? allExpenses.filter(exp => exp.sheet_id === sheetId)
-      : allExpenses;
+    console.warn('Exception while fetching expenses from Supabase:', error);
+    databaseError = true;
   }
+
+  if (databaseError) {
+    console.log('Using localStorage fallback for expenses due to database error');
+    return filteredLocalExpenses;
+  }
+  
+  return databaseData;
 }
 
-// Add a new expense
-export async function addExpense(expense: Expense, sheetId: string): Promise<void> {
+// Add a new expense with improved reliability
+export async function addExpense(expense: Expense, sheetId: string): Promise<boolean> {
   // Get the current authenticated user ID
   const user_id = await getCurrentUserId();
   
+  // Use the exact date from the expense for strict date ordering
   const newExpense = {
     ...expense,
     id: expense.id || uuidv4(),
     user_id,
-    sheet_id: sheetId, // Add sheet_id to the expense
+    sheet_id: sheetId,
+    // Store the exact date string for proper date matching
+    date: expense.date,
     created_at: new Date().toISOString()
   }
 
   // During SSR or build, don't try to save
   if (isServerRendering()) {
-    return;
+    return false;
   }
 
-  try {
-    const { error } = await supabase
-      .from('expenses')
-      .insert(newExpense)
-
-    if (error) {
-      console.warn('Supabase error, falling back to localStorage:', error);
-      // Fall back to localStorage
-      const expenses = getLocalExpenses();
-      saveLocalExpenses([...expenses, newExpense]);
-      return;
+  // Always save to localStorage first as backup
+  const expenses = getLocalExpenses();
+  saveLocalExpenses([...expenses, newExpense]);
+  console.log('Expense saved to localStorage as backup', newExpense.id);
+  
+  // Then try to save to Supabase with retry logic
+  let retryCount = 0;
+  const maxRetries = 3;
+  let savedSuccessfully = false;
+  
+  while (retryCount < maxRetries && !savedSuccessfully) {
+    try {
+      console.log(`Attempt ${retryCount + 1} to insert expense into Supabase`, newExpense.id);
+      const { data, error } = await supabase
+        .from('expenses')
+        .insert(newExpense)
+        .select();
+      
+      if (error) {
+        console.warn(`Supabase error on attempt ${retryCount + 1}:`, error);
+        retryCount++;
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 500));
+        continue;
+      }
+      
+      console.log('Expense saved successfully to Supabase:', data);
+      savedSuccessfully = true;
+    } catch (error) {
+      console.error(`Exception on attempt ${retryCount + 1}:`, error);
+      retryCount++;
+      // Wait a bit before retrying
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
-  } catch (error) {
-    console.warn('Failed to add expense to Supabase, using localStorage fallback:', error);
-    // Fall back to localStorage
-    const expenses = getLocalExpenses();
-    saveLocalExpenses([...expenses, newExpense]);
   }
+  
+  if (!savedSuccessfully) {
+    console.warn('Failed to save expense to Supabase after all retries');
+  }
+  
+  return savedSuccessfully;
 }
 
 // Delete an expense
@@ -263,10 +342,19 @@ export async function getPreviousMonthTotal(): Promise<number> {
 }
 
 // Category management functions
-export function getCategories(): string[] {
+export function getCategories(sheetId?: string): string[] {
   if (typeof window === "undefined") return ["food", "accessories", "transport", "investment", "others"];
 
   try {
+    // If sheetId is provided, try to get sheet-specific categories first
+    if (sheetId) {
+      const sheetCategories = localStorage.getItem(`expense-tracker-categories-${sheetId}`);
+      if (sheetCategories) {
+        return JSON.parse(sheetCategories);
+      }
+    }
+    
+    // Fall back to global categories if no sheet-specific ones exist
     const stored = localStorage.getItem("expense-tracker-categories");
     return stored ? JSON.parse(stored) : ["food", "accessories", "transport", "investment", "others"];
   } catch (e) {
@@ -275,34 +363,40 @@ export function getCategories(): string[] {
   }
 }
 
-export function saveCategories(categories: string[]): void {
+export function saveCategories(categories: string[], sheetId?: string): void {
   if (typeof window === "undefined") return;
   
   try {
-    localStorage.setItem("expense-tracker-categories", JSON.stringify(categories));
+    // If sheetId is provided, save sheet-specific categories
+    if (sheetId) {
+      localStorage.setItem(`expense-tracker-categories-${sheetId}`, JSON.stringify(categories));
+    } else {
+      // Also update global categories as a fallback
+      localStorage.setItem("expense-tracker-categories", JSON.stringify(categories));
+    }
   } catch (e) {
     console.warn("Failed to save categories to localStorage:", e);
   }
 }
 
-export function addCategory(category: string): void {
-  const categories = getCategories();
+export function addCategory(category: string, sheetId?: string): void {
+  const categories = getCategories(sheetId);
   if (!categories.includes(category.toLowerCase())) {
     categories.push(category.toLowerCase());
-    saveCategories(categories);
+    saveCategories(categories, sheetId);
   }
 }
 
-export function removeCategory(categoryToRemove: string): void {
-  const categories = getCategories();
+export function removeCategory(categoryToRemove: string, sheetId?: string): void {
+  const categories = getCategories(sheetId);
   const newCategories = categories.filter(cat => cat !== categoryToRemove);
-  saveCategories(newCategories);
+  saveCategories(newCategories, sheetId);
   
   // Update any existing expenses with this category to "uncategorized"
   try {
     const expenses = getLocalExpenses();
     const updatedExpenses = expenses.map(expense => {
-      if (expense.category === categoryToRemove) {
+      if (expense.category === categoryToRemove && (!sheetId || expense.sheet_id === sheetId)) {
         return { ...expense, category: "uncategorized" };
       }
       return expense;
@@ -313,16 +407,16 @@ export function removeCategory(categoryToRemove: string): void {
   }
 }
 
-export function updateCategoryName(oldName: string, newName: string): void {
-  const categories = getCategories();
+export function updateCategoryName(oldName: string, newName: string, sheetId?: string): void {
+  const categories = getCategories(sheetId);
   const newCategories = categories.map(cat => cat === oldName ? newName.toLowerCase() : cat);
-  saveCategories(newCategories);
+  saveCategories(newCategories, sheetId);
   
   // Update any existing expenses with this category
   try {
     const expenses = getLocalExpenses();
     const updatedExpenses = expenses.map(expense => {
-      if (expense.category === oldName) {
+      if (expense.category === oldName && (!sheetId || expense.sheet_id === sheetId)) {
         return { ...expense, category: newName.toLowerCase() };
       }
       return expense;
@@ -330,6 +424,126 @@ export function updateCategoryName(oldName: string, newName: string): void {
     saveLocalExpenses(updatedExpenses);
   } catch (e) {
     console.warn("Failed to update expenses when renaming category:", e);
+  }
+}
+
+// Get categories from both database and localStorage
+export async function getSheetCategories(sheetId: string): Promise<string[]> {
+  if (!sheetId || isServerRendering()) {
+    return ["food", "accessories", "transport", "investment", "others"];
+  }
+
+  // First try to get from database
+  let dbCategories: string[] = [];
+  let dbError = false;
+  
+  try {
+    const { data, error } = await supabase
+      .from('sheet_categories')
+      .select('category, display_order')
+      .eq('sheet_id', sheetId)
+      .order('display_order');
+      
+    if (error) {
+      console.warn('Error fetching categories from database:', error);
+      dbError = true;
+    } else if (data && data.length > 0) {
+      dbCategories = data.map(row => row.category);
+      console.log('Categories fetched from database:', dbCategories);
+      
+      // Sync to localStorage as backup
+      localStorage.setItem(`expense-tracker-categories-${sheetId}`, JSON.stringify(dbCategories));
+      
+      return dbCategories;
+    }
+  } catch (error) {
+    console.warn('Exception fetching categories from database:', error);
+    dbError = true;
+  }
+  
+  // If we couldn't get from database, try localStorage
+  if (dbError || dbCategories.length === 0) {
+    try {
+      // Get from localStorage as fallback
+      const sheetCategories = localStorage.getItem(`expense-tracker-categories-${sheetId}`);
+      if (sheetCategories) {
+        const parsedCategories = JSON.parse(sheetCategories);
+        
+        // If we have localStorage categories but database failed, try to sync them to database
+        if (dbError && parsedCategories.length > 0) {
+          try {
+            const categoriesToSync = parsedCategories.map((category: string, index: number) => ({
+              id: uuidv4(), // Add unique ID for each category
+              sheet_id: sheetId,
+              category,
+              display_order: index + 1
+            }));
+            
+            // Try to sync back to database
+            const { error } = await supabase
+              .from('sheet_categories')
+              .insert(categoriesToSync)
+              .select();
+              
+            if (error) {
+              console.warn('Failed to sync categories to database:', error);
+            } else {
+              console.log('Categories synced from localStorage to database');
+            }
+          } catch (syncError) {
+            console.warn('Failed to sync categories to database:', syncError);
+          }
+        }
+        
+        return parsedCategories;
+      }
+    } catch (e) {
+      console.warn("Failed to get categories from localStorage:", e);
+    }
+  }
+  
+  // Default categories if nothing was found
+  const defaultCategories = ["food", "accessories", "transport", "investment", "others"];
+  return defaultCategories;
+}
+
+// Save categories to both database and localStorage
+export async function saveSheetCategories(categories: string[], sheetId: string): Promise<void> {
+  if (!sheetId || isServerRendering()) return;
+  
+  try {
+    // Save to localStorage first as backup
+    localStorage.setItem(`expense-tracker-categories-${sheetId}`, JSON.stringify(categories));
+    
+    // Then try to save to database
+    try {
+      // First, delete existing categories for this sheet
+      await supabase
+        .from('sheet_categories')
+        .delete()
+        .eq('sheet_id', sheetId);
+      
+      // Then insert new ones
+      const categoriesToSave = categories.map((category, index) => ({
+        sheet_id: sheetId,
+        category,
+        display_order: index + 1
+      }));
+      
+      const { error } = await supabase
+        .from('sheet_categories')
+        .insert(categoriesToSave);
+      
+      if (error) {
+        console.warn('Error saving categories to database:', error);
+      } else {
+        console.log('Categories saved to database successfully');
+      }
+    } catch (dbError) {
+      console.warn('Exception saving categories to database:', dbError);
+    }
+  } catch (e) {
+    console.warn("Failed to save categories to localStorage:", e);
   }
 }
 
@@ -399,4 +613,56 @@ export function getChartCategoryColor(category: string): string {
   // Simple hash function to get a consistent color
   const hash = category.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return extraColors[hash % extraColors.length];
+}
+
+// Helper function to check if two dates represent the same day (ignoring time)
+function isSameDay(date1: Date, date2: Date): boolean {
+  return (
+    date1.getFullYear() === date2.getFullYear() &&
+    date1.getMonth() === date2.getMonth() &&
+    date1.getDate() === date2.getDate()
+  );
+}
+
+// Deduplicate expenses for the same date and category
+export function deduplicateExpenses(expenses: Expense[]): Expense[] {
+  // Group expenses by date + category
+  const groupedExpenses = new Map<string, Expense[]>();
+  
+  // Group expenses by date and category
+  expenses.forEach(expense => {
+    const date = new Date(expense.date);
+    const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${expense.category}`;
+    if (!groupedExpenses.has(key)) {
+      groupedExpenses.set(key, []);
+    }
+    groupedExpenses.get(key)!.push(expense);
+  });
+  
+  // For each group, keep only the most recent expense (by created_at)
+  const deduplicated: Expense[] = [];
+  groupedExpenses.forEach(group => {
+    // Sort by created_at in descending order (newest first)
+    const sorted = group.sort((a, b) => {
+      const dateA = new Date(a.created_at || 0);
+      const dateB = new Date(b.created_at || 0);
+      return dateB.getTime() - dateA.getTime();
+    });
+    
+    // Keep only the most recent one
+    if (sorted.length > 1) {
+      console.log(`Found ${sorted.length} duplicate expenses for ${sorted[0].category} on ${new Date(sorted[0].date).toLocaleDateString()}. Keeping most recent.`);
+    }
+    deduplicated.push(sorted[0]);
+    
+    // Delete the duplicates from the database (async, but we don't wait)
+    if (sorted.length > 1) {
+      sorted.slice(1).forEach(dupe => {
+        console.log(`Deleting duplicate expense: ${dupe.id}`);
+        deleteExpense(dupe.id).catch(err => console.error('Error deleting duplicate:', err));
+      });
+    }
+  });
+  
+  return deduplicated;
 }

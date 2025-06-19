@@ -43,3 +43,10 @@ next-env.d.ts
 # OS generated files
 Thumbs.db
 .DS_Store
+
+# Ignore app/import/ directory and its contents
+app/import/
+
+# Ignore specific files
+components/data-importer.tsx
+import-expenses.js
