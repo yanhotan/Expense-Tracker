@@ -76,7 +76,7 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
       console.warn('Supabase error when fetching expenses:', data);
       databaseError = true;
     } else {
-      databaseData = data || [];
+      databaseData = data.data || [];
       console.log('Successfully fetched expenses from database:', databaseData.length);
       
       // Check for and clean up any duplicate expenses

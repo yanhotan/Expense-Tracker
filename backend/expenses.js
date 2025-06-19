@@ -10,7 +10,14 @@ router.get('/', async (req, res) => {
   const { sheetId, month, year, limit, offset } = req.query;
   let query = supabase.from('expenses').select('*');
   if (sheetId) query = query.eq('sheet_id', sheetId);
-  if (month) query = query.ilike('date', `${month}-%`); // YYYY-MM
+  if (month) {
+    // month is 'YYYY-MM'
+    const [yearStr, mStr] = month.split('-');
+    const start = `${yearStr}-${mStr}-01`;
+    // Get last day of month
+    const end = new Date(Number(yearStr), Number(mStr), 0).toISOString().slice(0, 10);
+    query = query.gte('date', start).lte('date', end);
+  }
   if (year) query = query.ilike('date', `${year}-%`);
   if (limit) query = query.limit(Number(limit));
   if (offset) query = query.range(Number(offset), Number(offset) + Number(limit) - 1);

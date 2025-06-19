@@ -26,8 +26,11 @@ export function ExpenseCharts({ sheetId }: { sheetId: string }) {
         // We need to update the data methods to filter by sheetId
         const expenses = await getExpenses(sheetId)
         
+        // Before using expenses.reduce, ensure expenses is an array
+        const safeExpenses = Array.isArray(expenses) ? expenses : [];
+        
         // Calculate category totals for this sheet
-        const categoryData = expenses.reduce(
+        const categoryData = safeExpenses.reduce(
           (acc, expense) => {
             const category = expense.category
             acc[category] = (acc[category] || 0) + expense.amount
@@ -38,7 +41,7 @@ export function ExpenseCharts({ sheetId }: { sheetId: string }) {
         
         // Calculate monthly totals for this sheet
         const monthlyData: Record<string, number> = {}
-        expenses.forEach((expense) => {
+        safeExpenses.forEach((expense) => {
           const date = new Date(expense.date)
           const monthYear = `${date.toLocaleString("default", { month: "short" })} ${date.getFullYear()}`
           monthlyData[monthYear] = (monthlyData[monthYear] || 0) + expense.amount

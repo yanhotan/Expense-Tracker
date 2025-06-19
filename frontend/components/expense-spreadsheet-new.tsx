@@ -56,9 +56,19 @@ export default function ExpenseSpreadsheet({
   const fetchExpenses = async () => {
     try {
       const data = await expenseApi.getAll({ sheetId, month: `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}` })
-      setExpenses(data.data || [])
-    } catch (error) {
+      // Defensive: handle if API returns { data: ... } or throws error
+      if (data && Array.isArray(data.data)) {
+        setExpenses(data.data)
+      } else if (Array.isArray(data)) {
+        setExpenses(data)
+      } else {
+        setExpenses([])
+      }
+    } catch (error: any) {
+      // If error is from apiRequest and has .message, log and set empty array
       console.error("Error fetching expenses:", error)
+      setExpenses([])
+      toast({ title: "Error", description: error?.message || "Failed to fetch expenses.", variant: "destructive" })
     }
   }
 
