@@ -52,4 +52,20 @@ router.post('/batch', async (req, res) => {
   res.status(201).json({ data });
 });
 
+// GET /api/expenses/categories - Get all unique categories for a sheet (from expenses table)
+router.get('/categories', async (req, res) => {
+  const user_id = '00000000-0000-0000-0000-000000000000';
+  const { sheetId } = req.query;
+  if (!sheetId) return res.status(400).json({ error: 'Missing sheetId' });
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('category')
+    .eq('sheet_id', sheetId)
+    .eq('user_id', user_id);
+  if (error) return res.status(500).json({ error: 'Database error' });
+  // Return unique categories only
+  const categories = Array.from(new Set((data || []).map(e => e.category)));
+  res.json({ data: categories });
+});
+
 export default router;

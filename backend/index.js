@@ -14,8 +14,8 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANO
 
 // GET /api/sheets - Get all expense sheets for a user (user_id from query for demo)
 app.get('/api/sheets', async (req, res) => {
-  const { user_id } = req.query;
-  if (!user_id) return res.status(401).json({ error: 'Unauthorized' });
+  // Hardcode user_id for demo/testing
+  const user_id = '00000000-0000-0000-0000-000000000000';
   const { data, error } = await supabase
     .from('expense_sheets')
     .select('*')
@@ -27,8 +27,9 @@ app.get('/api/sheets', async (req, res) => {
 
 // POST /api/sheets - Create new sheet
 app.post('/api/sheets', async (req, res) => {
-  const { name, pin, user_id } = req.body;
-  if (!user_id) return res.status(401).json({ error: 'Unauthorized' });
+  // Hardcode user_id for demo/testing
+  const user_id = '00000000-0000-0000-0000-000000000000';
+  const { name, pin } = req.body;
   const newSheet = {
     name,
     pin: pin || null,

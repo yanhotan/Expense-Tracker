@@ -7,10 +7,10 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANO
 
 // GET /api/analytics - Example: return totals by category, month, day
 router.get('/', async (req, res) => {
+  // Hardcode user_id for demo/testing
+  const user_id = '00000000-0000-0000-0000-000000000000';
   const { sheetId, month, year } = req.query;
   if (!sheetId) return res.status(400).json({ error: 'Missing sheetId' });
-  // Use a fixed user_id for all analytics queries
-  const user_id = '00000000-0000-0000-0000-000000000000';
   // Get all expenses for the sheet and month/year
   let query = supabase.from('expenses').select('*').eq('sheet_id', sheetId).eq('user_id', user_id);
   if (month) query = query.ilike('date', `${month}-%`);
@@ -38,7 +38,9 @@ router.get('/', async (req, res) => {
     if (ym === thisMonth) currentMonthTotal += exp.amount;
     if (ym === prevMonth) previousMonthTotal += exp.amount;
   });
-  res.json({ categoryTotals, monthlyTotals, dailyTotals, currentMonthTotal, previousMonthTotal, filters: req.query });
+  // Also return unique categories for the sheet (from expenses)
+  const categories = Array.from(new Set((data || []).map(exp => exp.category)));
+  res.json({ categoryTotals, monthlyTotals, dailyTotals, currentMonthTotal, previousMonthTotal, categories, filters: req.query });
 });
 
 export default router;
