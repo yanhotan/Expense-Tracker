@@ -6,6 +6,7 @@ import expensesRouter from './expenses.js';
 import categoriesRouter from './categories.js';
 import analyticsRouter from './analytics.js';
 import sheetsRouter from './sheets.js';
+import descriptionsRouter from './descriptions.js';
 
 const app = express();
 const corsOptions = {
@@ -57,6 +58,7 @@ app.use('/api/expenses', expensesRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/sheets', sheetsRouter);
+app.use('/api/descriptions', descriptionsRouter);
 
 const PORT = 4000;
 app.listen(PORT, () => {

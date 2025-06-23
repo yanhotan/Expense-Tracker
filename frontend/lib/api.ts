@@ -161,6 +161,82 @@ export const categoriesApi = {
   },
 }
 
+// Descriptions API functions
+export const descriptionsApi = {
+  async getAll(params: { sheetId?: string; expenseId?: string } = {}) {
+    const searchParams = new URLSearchParams()
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        searchParams.append(key, value.toString())
+      }
+    })
+    
+    const queryString = searchParams.toString()
+    const endpoint = `/descriptions${queryString ? `?${queryString}` : ''}`
+    
+    return apiRequest<{ data: ColumnDescription[] }>(endpoint)
+  },
+  
+  async saveDescription(expenseId: string, description: string) {
+    return apiRequest<{ data: ColumnDescription }>('/descriptions', {
+      method: 'POST',
+      body: JSON.stringify({ expense_id: expenseId, description }),
+    })
+  },
+  
+  async delete(id: string) {
+    return apiRequest<{ success: boolean }>(`/descriptions/${id}`, {
+      method: 'DELETE',
+    })
+  },
+  
+  async deleteByExpenseId(expenseId: string) {
+    return apiRequest<{ success: boolean }>(`/descriptions/expense/${expenseId}`, {
+      method: 'DELETE',
+    })
+  }
+}
+
+// Delete an expense by ID via API
+export async function deleteExpenseApi(id: string) {
+  const res = await fetch(`/api/expenses/${id}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    throw new Error("Failed to delete expense")
+  }
+  return true
+}
+
+// Update an expense by ID via API
+export async function updateExpenseApi(expense: {
+  id: string
+  amount: number
+  category: string
+  description?: string
+  date: string
+}) {
+  const res = await fetch(`/api/expenses/${expense.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(expense),
+  })
+  if (!res.ok) {
+    throw new Error("Failed to update expense")
+  }
+  return await res.json()
+}
+
+// Fetch unique categories from the API
+export async function getCategoriesApi() {
+  const res = await fetch("/api/categories")
+  if (!res.ok) {
+    throw new Error("Failed to fetch categories")
+  }
+  return await res.json()
+}
+
 // Utility functions for common data transformations
 export const dataUtils = {
   // Format date for API

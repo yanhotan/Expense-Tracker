@@ -22,8 +22,8 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
 import { cn } from "../lib/utils"
 // --- API-based imports ---
-import { expenseApi, categoriesApi } from "../lib/api"
-import type { Expense } from "../lib/types"
+import { expenseApi, descriptionsApi, getCategoriesApi } from "../lib/api"
+import type { Expense, ColumnDescription } from "../lib/types"
 
 interface ExpenseSpreadsheetProps {
   sheetId: string
@@ -72,12 +72,35 @@ export default function ExpenseSpreadsheet({
     }
   }
 
+  // Use API-based categories fetcher
   const fetchCategories = async () => {
     try {
-      const data = await categoriesApi.getAll(sheetId)
-      setCategories(data.data || [])
+      // Use the correct backend API URL for categories
+      const res = await fetch("http://localhost:4000/api/categories")
+      if (!res.ok) throw new Error("Failed to fetch categories")
+      const data = await res.json()
+      setCategories(data.data || data || [])
     } catch (error) {
       console.error("Error fetching categories:", error)
+      setCategories([])
+    }
+  }
+  // Fetch descriptions from the backend API
+  const fetchDescriptions = async () => {
+    try {
+      if (!sheetId) return
+      const data = await descriptionsApi.getAll({ sheetId })
+      const descriptions: Record<string, string> = {}
+      
+      if (data?.data) {
+        data.data.forEach((desc) => {
+          descriptions[desc.expense_id] = desc.description
+        })
+      }
+      
+      setColumnDescriptions(descriptions)
+    } catch (error) {
+      console.error("Error fetching descriptions:", error)
     }
   }
 
@@ -85,6 +108,7 @@ export default function ExpenseSpreadsheet({
     if (sheetId) {
       fetchExpenses()
       fetchCategories()
+      fetchDescriptions()
     }
   }, [sheetId, currentMonth])
 
@@ -157,20 +181,34 @@ export default function ExpenseSpreadsheet({
     const value = inputValues[cellKey]
     if (value === undefined) return
     setSavingCells(prev => ({ ...prev, [cellKey]: true }))
-    try {
-      const amount = value === "" ? 0 : parseFloat(value)
+    try {      const amount = value === "" ? 0 : parseFloat(value)
       if (isNaN(amount)) return
+      
       const existingExpense = findExpenseForCell(date, category)
       if (existingExpense) {
         if (amount === 0) {
+          // Delete the expense and its description if it exists
           await expenseApi.delete(existingExpense.id)
+          // Also delete the associated description if it exists
+          if (columnDescriptions[existingExpense.id]) {
+            await descriptionsApi.deleteByExpenseId(existingExpense.id)
+            // Update local state to remove the description
+            setColumnDescriptions(prev => {
+              const updated = { ...prev }
+              delete updated[existingExpense.id]
+              return updated
+            })
+          }
         } else {
           await expenseApi.update(existingExpense.id, { ...existingExpense, amount })
         }
       } else if (amount !== 0) {
         await expenseApi.create({ date: date.toISOString(), category, amount, sheet_id: sheetId })
-      }
-      setInputValues(prev => { const updated = { ...prev }; delete updated[cellKey]; return updated })
+      }      setInputValues(prev => { const updated = { ...prev }; delete updated[cellKey]; return updated })
+      
+      // Refresh data after saving
+      await fetchExpenses()
+      await fetchDescriptions()
     } catch (error) {
       toast({ title: "Error", description: "Failed to save expense. Please try again.", variant: "destructive" })
     } finally {
@@ -185,6 +223,7 @@ export default function ExpenseSpreadsheet({
     }
     setDescDialog({ open: true, expenseId: expense.id, date, category, value: columnDescriptions[expense.id] || "" })
   }
+  // Add Category
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) {
       toast({ title: "Invalid category name", description: "Please enter a valid category name.", variant: "destructive" })
@@ -196,12 +235,50 @@ export default function ExpenseSpreadsheet({
       return
     }
     try {
-      await categoriesApi.create(sheetId, normalizedName)
+      // Add a zero-amount expense to create the category in the backend
+      await expenseApi.create({
+        date: new Date().toISOString(),
+        amount: 0,
+        category: normalizedName,
+        sheet_id: sheetId,
+      })
+      await fetchCategories()
       setNewCategoryName("")
       setIsAddCategoryDialogOpen(false)
-      toast({ title: "Category added", description: `The category "${newCategoryName}" has been added successfully.` })
+      toast({ title: "Category added", description: `The category \"${newCategoryName}\" has been added successfully.` })
     } catch (error) {
       toast({ title: "Error", description: "Failed to add category.", variant: "destructive" })
+    }
+  }
+  // Edit Category
+  const handleEditCategory = async () => {
+    if (!categoryToEdit.newName.trim()) return
+    const normalizedName = categoryToEdit.newName.trim().toLowerCase()
+    if (categories.includes(normalizedName) && normalizedName !== categoryToEdit.oldName) return
+    try {
+      // Update all expenses with oldName to newName via backend
+      const toUpdate = expenses.filter(exp => exp.category === categoryToEdit.oldName)
+      await Promise.all(toUpdate.map(exp => expenseApi.update(exp.id, { ...exp, category: normalizedName })))
+      await fetchExpenses()
+      await fetchCategories()
+      setIsEditCategoryDialogOpen(false)
+      toast({ title: "Category updated", description: `The category has been renamed to \"${categoryToEdit.newName}\".` })
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to update category.", variant: "destructive" })
+    }
+  }
+  // Delete Category
+  const handleDeleteCategory = async () => {
+    try {
+      // Update all expenses with this category to 'uncategorized' via backend
+      const toUpdate = expenses.filter(exp => exp.category === categoryToDelete)
+      await Promise.all(toUpdate.map(exp => expenseApi.update(exp.id, { ...exp, category: 'uncategorized' })))
+      await fetchExpenses()
+      await fetchCategories()
+      setIsDeleteCategoryDialogOpen(false)
+      toast({ title: "Category deleted", description: `The category \"${categoryToDelete}\" has been deleted.` })
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete category.", variant: "destructive" })
     }
   }
 
@@ -332,9 +409,8 @@ export default function ExpenseSpreadsheet({
                         type="text"
                         inputMode="decimal"
                         pattern="^-?\\d*(\\.\\d{0,2})?$"
-                        placeholder="0.00"
-                        className={cn(
-                          "pl-8 pr-8 w-full h-10 rounded border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none transition-colors appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                        placeholder="0.00"                        className={cn(
+                          "pl-2 pr-8 w-full h-10 rounded border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none transition-colors appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                           getDescriptionForCell(date, category) ? "bg-[#D5FF74] dark:bg-[#A5D041]/20" : "",
                           parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF] dark:bg-[#7BE7FF]/20" : ""
                         )}
@@ -365,10 +441,9 @@ export default function ExpenseSpreadsheet({
                         autoComplete="off"
                         disabled={savingCells[`${date.toISOString()}-${category}`]}
                         style={{ MozAppearance: 'textfield' }}
-                      />
-                      <button
+                      />                      <button
                         type="button"
-                        className={`absolute left-1 h-6 w-6 flex items-center justify-center opacity-100 transition-opacity z-10 ${getDescriptionForCell(date, category) ? 'text-blue-500' : 'text-gray-400'}`}
+                        className={`absolute right-1 h-6 w-6 flex items-center justify-center opacity-100 transition-opacity z-10 ${getDescriptionForCell(date, category) ? 'text-blue-500' : 'text-gray-400'}`}
                         onClick={(e) => {
                           e.preventDefault();
                           openDescriptionDialog(date, category);
@@ -437,15 +512,7 @@ export default function ExpenseSpreadsheet({
             <Button variant="outline" onClick={() => setIsAddCategoryDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={async () => {
-              if (!newCategoryName.trim()) return
-              const normalizedName = newCategoryName.trim().toLowerCase()
-              if (categories.includes(normalizedName)) return
-              await categoriesApi.create(sheetId, normalizedName)
-              setNewCategoryName("")
-              setIsAddCategoryDialogOpen(false)
-              toast({ title: "Category added", description: `The category \"${newCategoryName}\" has been added successfully.` })
-            }}>Add Category</Button>
+            <Button onClick={handleAddCategory}>Add Category</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -467,9 +534,7 @@ export default function ExpenseSpreadsheet({
                     if (!categoryToEdit.newName.trim()) return
                     const normalizedName = categoryToEdit.newName.trim().toLowerCase()
                     if (categories.includes(normalizedName) && normalizedName !== categoryToEdit.oldName) return
-                    categoriesApi.update(sheetId, categoryToEdit.oldName, normalizedName)
-                    setIsEditCategoryDialogOpen(false)
-                    toast({ title: "Category updated", description: `The category has been renamed to \"${categoryToEdit.newName}\".` })
+                    handleEditCategory()
                   }
                 }}
               />
@@ -479,14 +544,7 @@ export default function ExpenseSpreadsheet({
             <Button variant="outline" onClick={() => setIsEditCategoryDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={async () => {
-              if (!categoryToEdit.newName.trim()) return
-              const normalizedName = categoryToEdit.newName.trim().toLowerCase()
-              if (categories.includes(normalizedName) && normalizedName !== categoryToEdit.oldName) return
-              await categoriesApi.update(sheetId, categoryToEdit.oldName, normalizedName)
-              setIsEditCategoryDialogOpen(false)
-              toast({ title: "Category updated", description: `The category has been renamed to \"${categoryToEdit.newName}\".` })
-            }}>Save Changes</Button>
+            <Button onClick={handleEditCategory}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -502,17 +560,10 @@ export default function ExpenseSpreadsheet({
             <Button variant="outline" onClick={() => setIsDeleteCategoryDialogOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={async () => {
-              await categoriesApi.delete(sheetId, categoryToDelete)
-              setIsDeleteCategoryDialogOpen(false)
-              toast({ title: "Category deleted", description: `The category \"${categoryToDelete}\" has been deleted.` })
-            }}>
-              Delete
-            </Button>
+            <Button variant="destructive" onClick={handleDeleteCategory}>Delete</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
-      <Dialog open={descDialog.open} onOpenChange={(open: boolean) => setDescDialog(d => ({ ...d, open }))}>
+      </Dialog>      <Dialog open={descDialog.open} onOpenChange={(open: boolean) => setDescDialog(d => ({ ...d, open }))}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Description</DialogTitle>
@@ -530,12 +581,26 @@ export default function ExpenseSpreadsheet({
             <Button variant="outline" onClick={() => setDescDialog(d => ({ ...d, open: false }))}>Cancel</Button>
             <Button
               onClick={async () => {
-                // Save description logic here (API call)
-                // You may want to update columnDescriptions state as well
-                // Example:
-                // await saveDescription(descDialog.expenseId, descDialog.value)
-                setDescDialog(d => ({ ...d, open: false }))
-                toast({ title: "Description saved" })
+                try {
+                  // Save description via API
+                  await descriptionsApi.saveDescription(descDialog.expenseId, descDialog.value)
+                  
+                  // Update local state
+                  setColumnDescriptions(prev => ({
+                    ...prev,
+                    [descDialog.expenseId]: descDialog.value
+                  }))
+                  
+                  setDescDialog(d => ({ ...d, open: false }))
+                  toast({ title: "Description saved" })
+                } catch (error) {
+                  console.error("Error saving description:", error)
+                  toast({ 
+                    title: "Error", 
+                    description: "Failed to save description. Please try again.",
+                    variant: "destructive"
+                  })
+                }
               }}
             >
               Save
