@@ -37,35 +37,40 @@ router.post('/', async (req, res) => {
       date: req.body.date ? req.body.date.split('T')[0] : req.body.date
     };
     
-    console.log('Creating expense with data:', expense);
-      // Check if expense with this date and category already exists
+    console.log('Creating expense with data:', expense);    // Check if expense with this date and category already exists
     // Add extra logging to debug the issue
     console.log('Checking for existing expense with date:', expense.date, 
                 'category:', expense.category, 
                 'sheet_id:', expense.sheet_id);
-                
-    const { data: existingExpenses, error: checkError } = await supabase
-      .from('expenses')
-      .select('id, date, category, amount')
-      .eq('date', expense.date)
-      .eq('category', expense.category)
-      .eq('sheet_id', expense.sheet_id);
+    
+    // Skip duplicate check if any required field is missing
+    if (!expense.date || !expense.category || !expense.sheet_id) {
+      console.log('Skipping duplicate check due to missing required field');
+    } else {
+      const { data: existingExpenses, error: checkError } = await supabase
+        .from('expenses')
+        .select('id, date, category, amount')
+        .eq('date', expense.date)
+        .eq('category', expense.category)
+        .eq('sheet_id', expense.sheet_id);
+        
+      if (checkError) {
+        console.error('Error checking for existing expense:', checkError);
+      }
       
-    if (checkError) {
-      console.error('Error checking for existing expense:', checkError);
-    }
-    
-    // More detailed logging to see what's being returned
-    console.log('Found existing expenses:', existingExpenses);
-    
-    // If expense already exists, return an error to prevent duplication
-    if (existingExpenses && existingExpenses.length > 0) {
-      console.warn('Expense already exists for this date and category:', existingExpenses[0]);
-      return res.status(409).json({ 
-        error: 'Duplicate expense', 
-        details: 'An expense already exists for this date and category',
-        data: existingExpenses[0]
-      });
+      // More detailed logging to see what's being returned
+      console.log('Found existing expenses:', existingExpenses);
+      
+      // If expense already exists, return an error to prevent duplication
+      // Also check amount to avoid false positives
+      if (existingExpenses && existingExpenses.length > 0 && existingExpenses[0].amount > 0) {
+        console.warn('Expense already exists for this date and category:', existingExpenses[0]);
+        return res.status(409).json({ 
+          error: 'Duplicate expense', 
+          details: 'An expense already exists for this date and category',
+          data: existingExpenses[0]
+        });
+      }
     }
     
     const { data, error } = await supabase.from('expenses').insert(expense).select().single();
@@ -96,29 +101,37 @@ router.put('/:id', async (req, res) => {
     };
     
     console.log('Updating expense ID:', id, 'with data:', updates);
-    
-    // Check if this would create a duplicate (same date and category, different ID)
-    if (updates.date && updates.category) {
-      const { data: existingExpense, error: checkError } = await supabase
+      // Check if this would create a duplicate (same date and category, different ID)
+    if (updates.date && updates.category && updates.sheet_id) {
+      // Add extra logging to debug the issue
+      console.log('Checking for existing expense with date:', updates.date, 
+                'category:', updates.category, 
+                'sheet_id:', updates.sheet_id,
+                'excluding ID:', id);
+                
+      const { data: existingExpenses, error: checkError } = await supabase
         .from('expenses')
-        .select('id')
+        .select('id, date, category, amount')
         .eq('date', updates.date)
         .eq('category', updates.category)
         .eq('sheet_id', updates.sheet_id)
-        .neq('id', id) // Not the current expense
-        .maybeSingle();
+        .neq('id', id); // Not the current expense
         
       if (checkError) {
         console.error('Error checking for existing expense:', checkError);
       }
       
+      // More detailed logging
+      console.log('Found existing expenses (excluding current):', existingExpenses);
+      
       // If another expense already exists with the same date and category, return an error
-      if (existingExpense) {
-        console.warn('Update would create duplicate expense:', existingExpense);
+      // Also check amount to avoid false positives
+      if (existingExpenses && existingExpenses.length > 0 && existingExpenses.some(exp => exp.amount > 0)) {
+        console.warn('Update would create duplicate expense:', existingExpenses[0]);
         return res.status(409).json({ 
           error: 'Duplicate expense', 
           details: 'Another expense already exists for this date and category',
-          data: existingExpense
+          data: existingExpenses[0]
         });
       }
     }
