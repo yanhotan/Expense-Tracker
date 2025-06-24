@@ -48,7 +48,6 @@ export default function ExpenseSpreadsheet({
   const [categoryToDelete, setCategoryToDelete] = useState("")
   const [descDialog, setDescDialog] = useState<{ open: boolean, expenseId: string, date: Date, category: string, value: string }>({ open: false, expenseId: "", date: new Date(), category: "", value: "" })
   const [columnDescriptions, setColumnDescriptions] = useState<Record<string, string>>({})
-
   // --- Data fetching (API-based, not React Query) ---
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<string[]>([])
@@ -58,8 +57,10 @@ export default function ExpenseSpreadsheet({
       const data = await expenseApi.getAll({ sheetId, month: `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}` })
       // Defensive: handle if API returns { data: ... } or throws error
       if (data && Array.isArray(data.data)) {
+        console.log("Fetched expenses:", data.data)
         setExpenses(data.data)
       } else if (Array.isArray(data)) {
+        console.log("Fetched expenses (array):", data)
         setExpenses(data)
       } else {
         setExpenses([])
@@ -84,48 +85,65 @@ export default function ExpenseSpreadsheet({
       console.error("Error fetching categories:", error)
       setCategories([])
     }
-  }
-  // Fetch descriptions from the backend API
+  }  // Fetch descriptions from column_descriptions table
   const fetchDescriptions = async () => {
     try {
-      if (!sheetId) return
-      const data = await descriptionsApi.getAll({ sheetId })
-      const descriptions: Record<string, string> = {}
+      // Get descriptions from the column_descriptions table
+      console.log("Fetching descriptions for sheet:", sheetId);
+      const response = await descriptionsApi.getAll({ 
+        sheetId,
+        columnName: 'notes' // Default column name for cell descriptions
+      });
       
-      if (data?.data) {
-        data.data.forEach((desc) => {
-          descriptions[desc.expense_id] = desc.description
-        })
+      if (response && Array.isArray(response.data)) {
+        const descriptions: Record<string, string> = {};
+        
+        // Map descriptions to expense IDs
+        response.data.forEach(item => {
+          if (item.expense_id && item.description) {
+            descriptions[item.expense_id] = item.description;
+          }
+        });
+        
+        console.log("Fetched descriptions:", descriptions);
+        setColumnDescriptions(descriptions);
       }
-      
-      setColumnDescriptions(descriptions)
     } catch (error) {
-      console.error("Error fetching descriptions:", error)
+      console.error("Error fetching descriptions:", error);
     }
   }
-
   useEffect(() => {
     if (sheetId) {
       fetchExpenses()
       fetchCategories()
-      fetchDescriptions()
+      // Don't call fetchDescriptions here, we'll call it after expenses are loaded
     }
   }, [sheetId, currentMonth])
+  
+  // Separate useEffect to fetch descriptions whenever expenses change
+  useEffect(() => {
+    if (expenses.length > 0) {
+      fetchDescriptions()
+    }
+  }, [expenses])
 
   // --- Date helpers ---
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(currentMonth),
     end: endOfMonth(currentMonth),
   })
-
   // --- Calculation helpers ---
   const findExpenseForCell = (date: Date, category: string) => {
     if (!expenses) return undefined
+    
+    // Format the date to ISO format (YYYY-MM-DD) for consistent comparison
+    const formattedDate = date.toISOString().split('T')[0]
+    
+    // Find expense by date and category - ensuring exact date match
     return expenses.find((exp: Expense) => {
-      const expDate = new Date(exp.date)
-      return expDate.getFullYear() === currentMonth.getFullYear() &&
-        expDate.getMonth() === currentMonth.getMonth() &&
-        isSameDay(expDate, date) && exp.category === category
+      // Compare using the formatted date string for exact matching
+      const expFormattedDate = exp.date.split('T')[0]
+      return expFormattedDate === formattedDate && exp.category === category
     })
   }
   const getCellKey = (date: Date, category: string) => `${date.toISOString()}-${category}`
@@ -174,23 +192,25 @@ export default function ExpenseSpreadsheet({
   // --- Event handlers ---
   const handleExpenseInputChange = (date: Date, category: string, value: string) => {
     const cellKey = getCellKey(date, category)
-    setInputValues(prev => ({ ...prev, [cellKey]: value }))
-  }
-  const saveExpenseValue = async (date: Date, category: string) => {
+    setInputValues(prev => ({ ...prev, [cellKey]: value }))  }
+    const saveExpenseValue = async (date: Date, category: string) => {
     const cellKey = getCellKey(date, category)
     const value = inputValues[cellKey]
     if (value === undefined) return
     setSavingCells(prev => ({ ...prev, [cellKey]: true }))
-    try {      const amount = value === "" ? 0 : parseFloat(value)
+    try {
+      const amount = value === "" ? 0 : parseFloat(value)
       if (isNaN(amount)) return
       
       const existingExpense = findExpenseForCell(date, category)
       if (existingExpense) {
-        if (amount === 0) {
-          // Delete the expense and its description if it exists
+        if (amount === 0) {          // Delete the expense and its description if it exists
+          console.log("Deleting expense:", existingExpense.id)
           await expenseApi.delete(existingExpense.id)
-          // Also delete the associated description if it exists
-          if (columnDescriptions[existingExpense.id]) {
+          
+          // Always try to delete any associated description in the column_descriptions table
+          try {
+            console.log("Deleting description for expense:", existingExpense.id)
             await descriptionsApi.deleteByExpenseId(existingExpense.id)
             // Update local state to remove the description
             setColumnDescriptions(prev => {
@@ -198,19 +218,79 @@ export default function ExpenseSpreadsheet({
               delete updated[existingExpense.id]
               return updated
             })
+          } catch (descError) {
+            console.error("Error deleting description:", descError)
+            // Continue anyway as the expense was deleted
           }
         } else {
-          await expenseApi.update(existingExpense.id, { ...existingExpense, amount })
+          console.log("Updating expense:", existingExpense.id, "to amount:", amount)
+          try {
+            const response = await expenseApi.update(existingExpense.id, { 
+              ...existingExpense, 
+              amount,
+              // Add these fields to ensure the update works correctly
+              user_id: existingExpense.user_id || '00000000-0000-0000-0000-000000000000',
+              sheet_id: existingExpense.sheet_id || sheetId
+            })
+            console.log("Updated expense response:", response)
+          } catch (updateError) {
+            console.error("Error updating expense:", updateError)
+            throw updateError
+          }
         }
-      } else if (amount !== 0) {
-        await expenseApi.create({ date: date.toISOString(), category, amount, sheet_id: sheetId })
-      }      setInputValues(prev => { const updated = { ...prev }; delete updated[cellKey]; return updated })
+      } else if (amount !== 0) {        // Create new expense and get the response with the ID
+        // Format the date as YYYY-MM-DD without time component for consistent storage
+        const formattedDate = date.toISOString().split('T')[0]
+        
+        console.log("Creating new expense:", { 
+          date: formattedDate, 
+          category, 
+          amount, 
+          sheet_id: sheetId,
+          user_id: '00000000-0000-0000-0000-000000000000' // Add default user_id
+        })
+        
+        try {
+          const response = await expenseApi.create({ 
+            date: formattedDate, // Use the date without time component
+            category, 
+            amount, 
+            sheet_id: sheetId,
+            user_id: '00000000-0000-0000-0000-000000000000' // Add default user_id
+          })
+          console.log("Created expense response:", response)
+        } catch (createError) {
+          console.error("Error creating expense:", createError)
+          throw createError
+        }
+      }      
+      // Clear input value for this cell
+      setInputValues(prev => { const updated = { ...prev }; delete updated[cellKey]; return updated })
       
-      // Refresh data after saving
+      // Refresh data after saving - add a small delay to ensure server has processed the change
+      console.log("Refreshing data after save...")
+      // Wait a bit to ensure the backend has processed the changes
+      await new Promise(resolve => setTimeout(resolve, 300))
+      // Fetch fresh data from the server
       await fetchExpenses()
       await fetchDescriptions()
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to save expense. Please try again.", variant: "destructive" })
+      console.log("Refresh complete")    } catch (error: any) {
+      console.error("Error saving expense:", error)
+      
+      // Check if it's a duplicate expense error (409 Conflict)
+      if (error.message && error.message.includes("409")) {
+        toast({ 
+          title: "Duplicate Expense", 
+          description: "An expense already exists for this date and category. Try editing the existing expense instead.", 
+          variant: "destructive" 
+        })
+      } else {
+        toast({ 
+          title: "Error saving expense", 
+          description: error.message || "Failed to save expense. Please try again.", 
+          variant: "destructive" 
+        })
+      }
     } finally {
       setSavingCells(prev => ({ ...prev, [cellKey]: false }))
     }
@@ -578,28 +658,57 @@ export default function ExpenseSpreadsheet({
             rows={4}
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDescDialog(d => ({ ...d, open: false }))}>Cancel</Button>
-            <Button
+            <Button variant="outline" onClick={() => setDescDialog(d => ({ ...d, open: false }))}>Cancel</Button>            <Button
               onClick={async () => {
                 try {
-                  // Save description via API
-                  await descriptionsApi.saveDescription(descDialog.expenseId, descDialog.value)
+                  console.log("Saving description for expense ID:", descDialog.expenseId);
                   
-                  // Update local state
-                  setColumnDescriptions(prev => ({
-                    ...prev,
-                    [descDialog.expenseId]: descDialog.value
-                  }))
+                  // Double-check that the expense exists
+                  const expenseExists = expenses.some(exp => exp.id === descDialog.expenseId);
+                  if (!expenseExists) {
+                    throw new Error("Expense not found. Please refresh the page and try again.");
+                  }
                   
-                  setDescDialog(d => ({ ...d, open: false }))
-                  toast({ title: "Description saved" })
-                } catch (error) {
-                  console.error("Error saving description:", error)
+                  if (descDialog.value.trim() === '') {
+                    // If description is empty, delete it
+                    await descriptionsApi.deleteByExpenseId(descDialog.expenseId);
+                    
+                    // Update local state
+                    setColumnDescriptions(prev => {
+                      const updated = { ...prev };
+                      delete updated[descDialog.expenseId];
+                      return updated;
+                    });
+                    
+                    toast({ title: "Description removed" });
+                  } else {
+                    // Save description via API to column_descriptions table with column_name='notes'
+                    const response = await descriptionsApi.saveDescription(
+                      descDialog.expenseId, 
+                      descDialog.value,
+                      'notes' // Specify the column name
+                    );
+                    
+                    // Update local state with the new description
+                    setColumnDescriptions(prev => ({
+                      ...prev,
+                      [descDialog.expenseId]: descDialog.value
+                    }));
+                    
+                    toast({ title: "Description saved" });
+                  }
+                  
+                  setDescDialog(d => ({ ...d, open: false }));
+                  
+                  // Refresh descriptions to ensure everything is in sync
+                  await fetchDescriptions();
+                } catch (error: any) {
+                  console.error("Error saving description:", error);
                   toast({ 
                     title: "Error", 
-                    description: "Failed to save description. Please try again.",
+                    description: error.message || "Failed to save description. Please try again.",
                     variant: "destructive"
-                  })
+                  });
                 }
               }}
             >

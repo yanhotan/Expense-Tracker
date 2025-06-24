@@ -28,19 +28,114 @@ router.get('/', async (req, res) => {
 
 // POST /api/expenses - Create new expense
 router.post('/', async (req, res) => {
-  const expense = req.body;
-  const { data, error } = await supabase.from('expenses').insert(expense).select().single();
-  if (error) return res.status(500).json({ error: 'Database error' });
-  res.status(201).json({ data });
+  try {
+    // Set default user_id if not provided and normalize date format
+    const expense = {
+      ...req.body,
+      user_id: req.body.user_id || '00000000-0000-0000-0000-000000000000',
+      // Ensure date is in YYYY-MM-DD format without time component
+      date: req.body.date ? req.body.date.split('T')[0] : req.body.date
+    };
+    
+    console.log('Creating expense with data:', expense);
+      // Check if expense with this date and category already exists
+    // Add extra logging to debug the issue
+    console.log('Checking for existing expense with date:', expense.date, 
+                'category:', expense.category, 
+                'sheet_id:', expense.sheet_id);
+                
+    const { data: existingExpenses, error: checkError } = await supabase
+      .from('expenses')
+      .select('id, date, category, amount')
+      .eq('date', expense.date)
+      .eq('category', expense.category)
+      .eq('sheet_id', expense.sheet_id);
+      
+    if (checkError) {
+      console.error('Error checking for existing expense:', checkError);
+    }
+    
+    // More detailed logging to see what's being returned
+    console.log('Found existing expenses:', existingExpenses);
+    
+    // If expense already exists, return an error to prevent duplication
+    if (existingExpenses && existingExpenses.length > 0) {
+      console.warn('Expense already exists for this date and category:', existingExpenses[0]);
+      return res.status(409).json({ 
+        error: 'Duplicate expense', 
+        details: 'An expense already exists for this date and category',
+        data: existingExpenses[0]
+      });
+    }
+    
+    const { data, error } = await supabase.from('expenses').insert(expense).select().single();
+    
+    if (error) {
+      console.error('Error creating expense:', error);
+      return res.status(500).json({ error: 'Database error', details: error.message });
+    }
+    
+    console.log('Expense created:', data);
+    res.status(201).json({ data });
+  } catch (err) {
+    console.error('Unexpected error in POST /expenses:', err);
+    res.status(500).json({ error: 'Unexpected error', details: err.message });
+  }
 });
 
 // PUT /api/expenses/:id - Update expense
 router.put('/:id', async (req, res) => {
-  const { id } = req.params;
-  const updates = req.body;
-  const { data, error } = await supabase.from('expenses').update(updates).eq('id', id).select().single();
-  if (error) return res.status(500).json({ error: 'Database error' });
-  res.json({ data });
+  try {
+    const { id } = req.params;
+    
+    // Normalize date format in updates
+    const updates = {
+      ...req.body,
+      // Ensure date is in YYYY-MM-DD format without time component
+      date: req.body.date ? req.body.date.split('T')[0] : req.body.date
+    };
+    
+    console.log('Updating expense ID:', id, 'with data:', updates);
+    
+    // Check if this would create a duplicate (same date and category, different ID)
+    if (updates.date && updates.category) {
+      const { data: existingExpense, error: checkError } = await supabase
+        .from('expenses')
+        .select('id')
+        .eq('date', updates.date)
+        .eq('category', updates.category)
+        .eq('sheet_id', updates.sheet_id)
+        .neq('id', id) // Not the current expense
+        .maybeSingle();
+        
+      if (checkError) {
+        console.error('Error checking for existing expense:', checkError);
+      }
+      
+      // If another expense already exists with the same date and category, return an error
+      if (existingExpense) {
+        console.warn('Update would create duplicate expense:', existingExpense);
+        return res.status(409).json({ 
+          error: 'Duplicate expense', 
+          details: 'Another expense already exists for this date and category',
+          data: existingExpense
+        });
+      }
+    }
+    
+    const { data, error } = await supabase.from('expenses').update(updates).eq('id', id).select().single();
+    
+    if (error) {
+      console.error('Error updating expense:', error);
+      return res.status(500).json({ error: 'Database error', details: error.message });
+    }
+    
+    console.log('Expense updated:', data);
+    res.json({ data });
+  } catch (err) {
+    console.error('Unexpected error in PUT /expenses/:id:', err);
+    res.status(500).json({ error: 'Unexpected error', details: err.message });
+  }
 });
 
 // DELETE /api/expenses/:id - Delete expense

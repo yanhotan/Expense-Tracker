@@ -11,20 +11,42 @@ async function apiRequest<T>(
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`
   
-  const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-    ...options,
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Network error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+  console.log(`API Request: ${options.method || 'GET'} ${url}`);
+  if (options.body) {
+    console.log('Request body:', options.body);
   }
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      ...options,
+    })
 
-  return response.json()
+    // Log the response status for debugging
+    console.log(`API Response: ${response.status} ${response.statusText}`);
+
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { error: 'Network error' };
+      }
+      
+      console.error('API error response:', errorData);
+      throw new Error(errorData.error || errorData.details || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('API response data:', data);
+    return data;
+  } catch (error) {
+    console.error('API request failed:', error);
+    throw error;
+  }
 }
 
 // Expense API functions
@@ -163,7 +185,7 @@ export const categoriesApi = {
 
 // Descriptions API functions
 export const descriptionsApi = {
-  async getAll(params: { sheetId?: string; expenseId?: string } = {}) {
+  async getAll(params: { sheetId?: string; expenseId?: string; columnName?: string } = {}) {
     const searchParams = new URLSearchParams()
     
     Object.entries(params).forEach(([key, value]) => {
@@ -178,10 +200,10 @@ export const descriptionsApi = {
     return apiRequest<{ data: ColumnDescription[] }>(endpoint)
   },
   
-  async saveDescription(expenseId: string, description: string) {
+  async saveDescription(expenseId: string, description: string, columnName: string = 'notes') {
     return apiRequest<{ data: ColumnDescription }>('/descriptions', {
       method: 'POST',
-      body: JSON.stringify({ expense_id: expenseId, description }),
+      body: JSON.stringify({ expense_id: expenseId, description, column_name: columnName }),
     })
   },
   
@@ -190,9 +212,13 @@ export const descriptionsApi = {
       method: 'DELETE',
     })
   },
-  
-  async deleteByExpenseId(expenseId: string) {
-    return apiRequest<{ success: boolean }>(`/descriptions/expense/${expenseId}`, {
+    async deleteByExpenseId(expenseId: string, columnName?: string) {
+    let endpoint = `/descriptions/expense/${expenseId}`;
+    if (columnName) {
+      endpoint += `?columnName=${encodeURIComponent(columnName)}`;
+    }
+    
+    return apiRequest<{ success: boolean }>(endpoint, {
       method: 'DELETE',
     })
   }
