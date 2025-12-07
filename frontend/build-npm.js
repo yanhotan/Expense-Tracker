@@ -29,9 +29,9 @@ try {
   
   if (!fs.existsSync(envFile)) {
     console.log('📝 Creating empty .env.local for build...');
-    fs.writeFileSync(envFile, 
+    fs.writeFileSync(envFile,
       'NEXT_PUBLIC_SUPABASE_URL=https://placeholder-for-build.supabase.co\n' +
-      'NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder-key-for-build\n'
+      'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=placeholder-key-for-build\n'
     );
     console.log('✅ Created placeholder .env.local');
   } else {

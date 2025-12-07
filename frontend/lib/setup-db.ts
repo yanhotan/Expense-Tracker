@@ -22,13 +22,13 @@ async function main() {
   
   // Debug environment variables (redacting sensitive info)
   console.log('NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'is set' : 'is not set');
-  console.log('NEXT_PUBLIC_SUPABASE_ANON_KEY:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? 'is set' : 'is not set');
-  
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  console.log('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY:', process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY ? 'is set' : 'is not set');
+
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY) {
     console.error('Error: Required environment variables are missing.');
     console.log('Make sure your .env.local file has these variables set correctly:');
     console.log('NEXT_PUBLIC_SUPABASE_URL=your_supabase_url');
-    console.log('NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_key');
+    console.log('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your_supabase_key');
     process.exit(1);
   }
   

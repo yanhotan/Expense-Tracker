@@ -1,68 +1,66 @@
-// import { NextRequest, NextResponse } from 'next/server'
-// import { supabase, getCurrentUserId } from '@/lib/supabase'
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
-// // GET /api/sheets - Get all expense sheets
-// export async function GET() {
-//   try {
-//     const user_id = await getCurrentUserId()
-//     if (!user_id) {
-//       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-//     }
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!)
 
-//     const { data, error } = await supabase
-//       .from('expense_sheets')
-//       .select('*')
-//       .eq('user_id', user_id)
-//       .order('created_at', { ascending: false })
+// GET /api/sheets - Get all expense sheets
+export async function GET() {
+  try {
+    // For demo/testing, use a hardcoded user_id
+    const user_id = '00000000-0000-0000-0000-000000000000'
 
-//     if (error) {
-//       console.error('Database error:', error)
-//       return NextResponse.json({ error: 'Database error' }, { status: 500 })
-//     }
+    const { data, error } = await supabase
+      .from('expense_sheets')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false })
 
-//     return NextResponse.json({ data: data || [] })
+    if (error) {
+      console.error('Database error:', error)
+      return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    }
 
-//   } catch (error) {
-//     console.error('API error:', error)
-//     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-//   }
-// }
+    return NextResponse.json({ data: data || [] })
 
-// // POST /api/sheets - Create new sheet
-// export async function POST(request: NextRequest) {
-//   try {
-//     const body = await request.json()
-//     const { name, pin } = body
+  } catch (error) {
+    console.error('API error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
 
-//     const user_id = await getCurrentUserId()
-//     if (!user_id) {
-//       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-//     }
+// POST /api/sheets - Create new sheet
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { id, name, pin, has_pin, created_at } = body
 
-//     const newSheet = {
-//       name,
-//       pin: pin || null,
-//       has_pin: !!pin,
-//       user_id
-//     }
+    // For demo/testing, use a hardcoded user_id
+    const user_id = '00000000-0000-0000-0000-000000000000'
 
-//     const { data, error } = await supabase
-//       .from('expense_sheets')
-//       .insert(newSheet)
-//       .select()
-//       .single()
+    const newSheet = {
+      id: id || undefined, // allow client to provide id for sync
+      name,
+      pin: pin || null,
+      has_pin: has_pin || !!pin,
+      created_at: created_at || new Date().toISOString(),
+      user_id
+    }
 
-//     if (error) {
-//       console.error('Database error:', error)
-//       return NextResponse.json({ error: 'Database error' }, { status: 500 })
-//     }
+    const { data, error } = await supabase
+      .from('expense_sheets')
+      .insert(newSheet)
+      .select()
+      .single()
 
-//     return NextResponse.json({ data }, { status: 201 })
+    if (error) {
+      console.error('Database error:', error)
+      return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    }
 
-//   } catch (error) {
-//     console.error('API error:', error)
-//     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-//   }
-// }
+    return NextResponse.json(data, { status: 201 })
 
-// // (No direct API_BASE usage, but ensure all API calls use the updated base from api.ts)
+  } catch (error) {
+    console.error('API error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}

@@ -1,0 +1,9 @@
+backend/node_modules/
+frontend/node_modules/
+
+/node_modules/
+# Cursor IDE
+.cursor/
+
+#backup
+backend/db_cluster-25-08-2025@22-20-08.backup
