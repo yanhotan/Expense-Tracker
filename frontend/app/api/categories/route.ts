@@ -1,25 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!)
-
-// GET /api/categories - Get all unique categories for the current user (from expenses)
+// GET /api/categories - Proxy to backend API for performance
 export async function GET(request: NextRequest) {
   try {
-    // For demo/testing, use a hardcoded user_id
-    const user_id = '00000000-0000-0000-0000-000000000000'
-    // Optionally support ?sheetId=... for sheet-specific categories
     const { searchParams } = new URL(request.url)
-    const sheetId = searchParams.get('sheetId')
-    let query = supabase.from('expenses').select('category').eq('user_id', user_id)
-    if (sheetId) query = query.eq('sheet_id', sheetId)
-    const { data, error } = await query
-    if (error) {
-      return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    const queryString = searchParams.toString()
+    const backendUrl = `http://localhost:4000/api/categories${queryString ? `?${queryString}` : ''}`
+
+    console.log(`📡 Categories proxy: ${backendUrl}`)
+
+    // Add timeout to prevent hanging
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+
+    const response = await fetch(backendUrl, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Backend error' }))
+      return NextResponse.json(errorData, { status: response.status })
     }
-    const uniqueCategories = [...new Set(data?.map(item => item.category) || [])].filter(Boolean).sort()
-    return NextResponse.json({ data: uniqueCategories })
-  } catch (error) {
+
+    const data = await response.json()
+    return NextResponse.json(data)
+
+  } catch (error: any) {
+    console.error('Categories proxy error:', error)
+    if (error.name === 'AbortError') {
+      return NextResponse.json({ error: 'Request timeout' }, { status: 504 })
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

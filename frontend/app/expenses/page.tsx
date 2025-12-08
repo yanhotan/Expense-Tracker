@@ -6,7 +6,8 @@ import { useState, useEffect } from "react"
 
 import { Button } from "@/components/ui/button"
 import { ExpenseTable } from "@/components/expense-table"
-import { getExpenses, Expense } from "@/lib/data" // Import the Expense type
+import { Expense } from "@/lib/data"
+import { expenseApi } from "@/lib/api"
 import { getLastAccessedSheet } from "@/lib/sheets"
 
 export default function ExpensesPage() {
@@ -17,22 +18,54 @@ export default function ExpensesPage() {
   useEffect(() => {
     async function loadExpenses() {
       setIsLoading(true)
+      const startTime = Date.now()
+      
       try {
         // Get the last accessed sheet
         const lastSheet = getLastAccessedSheet()
+        console.log('📋 Loading expenses for sheet:', lastSheet)
         setSheetId(lastSheet)
         
         if (lastSheet) {
-          const data = await getExpenses(lastSheet)
-          setExpenses(data)
+          console.log('📡 Calling expenseApi.getAll...')
+          const response = await expenseApi.getAll({ sheetId: lastSheet })
+          const elapsed = Date.now() - startTime
+          
+          console.log(`✅ API response received (${elapsed}ms):`, response)
+          console.log('📊 Response structure:', {
+            hasData: !!response.data,
+            dataIsArray: Array.isArray(response.data),
+            dataLength: response.data?.length,
+            fullResponse: response
+          })
+          
+          // Handle different response formats
+          if (response && response.data && Array.isArray(response.data)) {
+            console.log(`✅ Setting ${response.data.length} expenses`)
+            setExpenses(response.data)
+          } else if (Array.isArray(response)) {
+            console.log(`✅ Setting ${response.length} expenses (direct array)`)
+            setExpenses(response)
+          } else {
+            console.warn('⚠️ Unexpected response format:', response)
+            setExpenses([])
+          }
         } else {
-          // If no sheet is selected, show an empty list
+          console.log('⚠️ No sheet selected')
           setExpenses([])
         }
-      } catch (error) {
-        console.error('Error loading expenses:', error)
+      } catch (error: any) {
+        const elapsed = Date.now() - startTime
+        console.error(`❌ Error loading expenses (${elapsed}ms):`, error)
+        console.error('Error details:', {
+          message: error?.message,
+          stack: error?.stack,
+          name: error?.name
+        })
+        setExpenses([])
       } finally {
         setIsLoading(false)
+        console.log('🏁 Loading complete, isLoading set to false')
       }
     }
     

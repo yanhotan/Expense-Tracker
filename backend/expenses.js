@@ -19,11 +19,15 @@ router.get('/', async (req, res) => {
     query = query.gte('date', start).lte('date', end);
   }
   if (year) query = query.ilike('date', `${year}-%`);
+
+  // Order by created_at for consistent pagination (matching Next.js behavior)
+  query = query.order('created_at', { ascending: false });
+
   if (limit) query = query.limit(Number(limit));
   if (offset) query = query.range(Number(offset), Number(offset) + Number(limit) - 1);
   const { data, error, count } = await query;
   if (error) return res.status(500).json({ error: 'Database error' });
-  res.json({ data: data || [], count: count || 0, filters: req.query });
+  res.json({ data: data || [], count: count || data?.length || 0, filters: req.query });
 });
 
 // POST /api/expenses - Create new expense

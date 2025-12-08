@@ -18,38 +18,8 @@ app.use(express.json());
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
-// GET /api/sheets - Get all expense sheets for a user (user_id from query for demo)
-app.get('/api/sheets', async (req, res) => {
-  // Hardcode user_id for demo/testing
-  const user_id = '00000000-0000-0000-0000-000000000000';
-  const { data, error } = await supabase
-    .from('expense_sheets')
-    .select('*')
-    .eq('user_id', user_id)
-    .order('created_at', { ascending: false });
-  if (error) return res.status(500).json({ error: 'Database error' });
-  res.json({ data: data || [] });
-});
-
-// POST /api/sheets - Create new sheet
-app.post('/api/sheets', async (req, res) => {
-  // Hardcode user_id for demo/testing
-  const user_id = '00000000-0000-0000-0000-000000000000';
-  const { name, pin } = req.body;
-  const newSheet = {
-    name,
-    pin: pin || null,
-    has_pin: !!pin,
-    user_id
-  };
-  const { data, error } = await supabase
-    .from('expense_sheets')
-    .insert(newSheet)
-    .select()
-    .single();
-  if (error) return res.status(500).json({ error: 'Database error' });
-  res.status(201).json({ data });
-});
+// Sheet routes are now handled by sheetsRouter (mounted below)
+// Removed duplicate route handlers to avoid conflicts
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true }));

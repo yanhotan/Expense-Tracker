@@ -13,8 +13,8 @@ router.get('/', async (req, res) => {
   if (sheetId) query = query.eq('sheet_id', sheetId);
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: 'Database error' });
-  // Return unique categories only
-  const categories = Array.from(new Set((data || []).map(e => e.category)));
+  // Return unique categories only, sorted (matching Next.js behavior)
+  const categories = Array.from(new Set((data || []).map(e => e.category))).filter(Boolean).sort();
   res.json({ data: categories });
 });
 

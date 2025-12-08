@@ -21,7 +21,7 @@ const isServerRendering = () => {
 // Fallback to localStorage during build process or when Supabase fails
 const getLocalExpenses = (): Expense[] => {
   if (typeof window === "undefined") return [];
-  
+
   try {
     const stored = localStorage.getItem("expense-tracker-expenses");
     return stored ? JSON.parse(stored) : [];
@@ -33,7 +33,7 @@ const getLocalExpenses = (): Expense[] => {
 
 const saveLocalExpenses = (expenses: Expense[]): void => {
   if (typeof window === "undefined") return;
-  
+
   try {
     localStorage.setItem("expense-tracker-expenses", JSON.stringify(expenses));
   } catch (e) {
@@ -41,30 +41,30 @@ const saveLocalExpenses = (expenses: Expense[]): void => {
   }
 }
 
-// Get all expenses from Supabase
+// Get all expenses from backend API
 export async function getExpenses(sheetId?: string): Promise<Expense[]> {
   // During build or SSG processes, use dummy data
   if (isServerRendering()) {
     return [];
   }
-  
+
   // Get local expenses first as a fallback if database call fails
   const localExpenses = getLocalExpenses();
-  const filteredLocalExpenses = sheetId 
+  const filteredLocalExpenses = sheetId
     ? localExpenses.filter(exp => exp.sheet_id === sheetId)
     : localExpenses;
-    
+
   let databaseError = false;
   let databaseData: Expense[] = [];
 
   try {
     let query = `http://localhost:4000/api/expenses?user_id=eq.00000000-0000-0000-0000-000000000000`;
-      
+
     // Filter by sheet_id if provided
     if (sheetId) {
       query += `&sheet_id=eq.${sheetId}`;
     }
-    
+
     // Sort by created_at (when the expense was added) instead of date
     // This preserves the order in which expenses were entered
     query += `&order=created_at.desc`;
@@ -78,7 +78,7 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
     } else {
       databaseData = data.data || [];
       console.log('Successfully fetched expenses from database:', databaseData.length);
-      
+
       // Check for and clean up any duplicate expenses
       if (databaseData.length > 0) {
         const dedupedData = deduplicateExpenses(databaseData);
@@ -87,22 +87,22 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
           databaseData = dedupedData;
         }
       }
-      
+
       // If we have database data and local data, try to merge any missing items
       if (databaseData.length > 0 && localExpenses.length > 0) {
         // Find any expenses in localStorage that are not in the database
-        const missingExpenses = localExpenses.filter(localExp => 
+        const missingExpenses = localExpenses.filter(localExp =>
           !databaseData.some(dbExp => dbExp.id === localExp.id)
         );
-        
+
         // If we have expenses that didn't make it to the database, try to save them now
         if (missingExpenses.length > 0) {
           console.log('Found missing expenses in localStorage that need to be synced:', missingExpenses.length);
-          
+
           // Try to save each missing expense to the database
           for (const missingExpense of missingExpenses) {
             if (sheetId && missingExpense.sheet_id !== sheetId) continue;
-            
+
             try {
               const response = await fetch('http://localhost:4000/api/expenses', {
                 method: 'POST',
@@ -111,9 +111,9 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
                 },
                 body: JSON.stringify(missingExpense),
               });
-              
+
               const data = await response.json();
-              
+
               if (!response.ok) {
                 console.warn('Failed to sync missing expense:', data);
               } else {
@@ -126,7 +126,7 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
           }
         }
       }
-      
+
       // Return database data as the source of truth if available
       return databaseData;
     }
@@ -139,7 +139,7 @@ export async function getExpenses(sheetId?: string): Promise<Expense[]> {
     console.log('Using localStorage fallback for expenses due to database error');
     return filteredLocalExpenses;
   }
-  
+
   return databaseData;
 }
 
@@ -164,12 +164,12 @@ export async function addExpense(expense: Expense, sheetId: string): Promise<boo
   const expenses = getLocalExpenses();
   saveLocalExpenses([...expenses, newExpense]);
   console.log('Expense saved to localStorage as backup', newExpense.id);
-  
+
   // Then try to save to Supabase with retry logic
   let retryCount = 0;
   const maxRetries = 3;
   let savedSuccessfully = false;
-  
+
   while (retryCount < maxRetries && !savedSuccessfully) {
     try {
       console.log(`Attempt ${retryCount + 1} to insert expense into Supabase`, newExpense.id);
@@ -180,9 +180,9 @@ export async function addExpense(expense: Expense, sheetId: string): Promise<boo
         },
         body: JSON.stringify(newExpense),
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         console.warn(`Supabase error on attempt ${retryCount + 1}:`, data);
         retryCount++;
@@ -190,7 +190,7 @@ export async function addExpense(expense: Expense, sheetId: string): Promise<boo
         await new Promise(resolve => setTimeout(resolve, 500));
         continue;
       }
-      
+
       console.log('Expense saved successfully to Supabase:', data);
       savedSuccessfully = true;
     } catch (error) {
@@ -200,11 +200,11 @@ export async function addExpense(expense: Expense, sheetId: string): Promise<boo
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
-  
+
   if (!savedSuccessfully) {
     console.warn('Failed to save expense to Supabase after all retries');
   }
-  
+
   return savedSuccessfully;
 }
 
@@ -219,7 +219,7 @@ export async function deleteExpense(id: string): Promise<void> {
     const response = await fetch(`http://localhost:4000/api/expenses/${id}`, {
       method: 'DELETE',
     });
-    
+
     if (!response.ok) {
       const data = await response.json();
       console.warn('Supabase delete error, falling back to localStorage:', data);
@@ -253,13 +253,13 @@ export async function updateExpense(updatedExpense: Expense): Promise<void> {
       },
       body: JSON.stringify(updatedExpense),
     });
-    
+
     if (!response.ok) {
       const data = await response.json();
       console.warn('Supabase update error, falling back to localStorage:', data);
       // Fall back to localStorage
       const expenses = getLocalExpenses();
-      const updatedExpenses = expenses.map(expense => 
+      const updatedExpenses = expenses.map(expense =>
         expense.id === updatedExpense.id ? updatedExpense : expense
       );
       saveLocalExpenses(updatedExpenses);
@@ -269,7 +269,7 @@ export async function updateExpense(updatedExpense: Expense): Promise<void> {
     console.warn('Failed to update expense in Supabase, using localStorage fallback:', error);
     // Fall back to localStorage
     const expenses = getLocalExpenses();
-    const updatedExpenses = expenses.map(expense => 
+    const updatedExpenses = expenses.map(expense =>
       expense.id === updatedExpense.id ? updatedExpense : expense
     );
     saveLocalExpenses(updatedExpenses);
@@ -279,7 +279,7 @@ export async function updateExpense(updatedExpense: Expense): Promise<void> {
 // Get totals by category
 export async function getCategoryTotals(): Promise<Record<string, number>> {
   const expenses = await getExpenses()
-  
+
   return expenses.reduce(
     (acc, expense) => {
       const category = expense.category
@@ -365,7 +365,7 @@ export function getCategories(sheetId?: string): string[] {
         return JSON.parse(sheetCategories);
       }
     }
-    
+
     // Fall back to global categories if no sheet-specific ones exist
     const stored = localStorage.getItem("expense-tracker-categories");
     return stored ? JSON.parse(stored) : ["food", "accessories", "transport", "investment", "others"];
@@ -377,7 +377,7 @@ export function getCategories(sheetId?: string): string[] {
 
 export function saveCategories(categories: string[], sheetId?: string): void {
   if (typeof window === "undefined") return;
-  
+
   try {
     // If sheetId is provided, save sheet-specific categories
     if (sheetId) {
@@ -403,7 +403,7 @@ export function removeCategory(categoryToRemove: string, sheetId?: string): void
   const categories = getCategories(sheetId);
   const newCategories = categories.filter(cat => cat !== categoryToRemove);
   saveCategories(newCategories, sheetId);
-  
+
   // Update any existing expenses with this category to "uncategorized"
   try {
     const expenses = getLocalExpenses();
@@ -423,7 +423,7 @@ export function updateCategoryName(oldName: string, newName: string, sheetId?: s
   const categories = getCategories(sheetId);
   const newCategories = categories.map(cat => cat === oldName ? newName.toLowerCase() : cat);
   saveCategories(newCategories, sheetId);
-  
+
   // Update any existing expenses with this category
   try {
     const expenses = getLocalExpenses();
@@ -448,28 +448,28 @@ export async function getSheetCategories(sheetId: string): Promise<string[]> {
   // First try to get from database
   let dbCategories: string[] = [];
   let dbError = false;
-  
+
   try {
     const response = await fetch(`http://localhost:4000/api/sheet_categories?sheet_id=eq.${sheetId}`);
     const data = await response.json();
-    
+
     if (!response.ok) {
       console.warn('Error fetching categories from database:', data);
       dbError = true;
     } else if (data && data.length > 0) {
       dbCategories = data.map((row: any) => row.category);
       console.log('Categories fetched from database:', dbCategories);
-      
+
       // Sync to localStorage as backup
       localStorage.setItem(`expense-tracker-categories-${sheetId}`, JSON.stringify(dbCategories));
-      
+
       return dbCategories;
     }
   } catch (error) {
     console.warn('Exception fetching categories from database:', error);
     dbError = true;
   }
-  
+
   // If we couldn't get from database, try localStorage
   if (dbError || dbCategories.length === 0) {
     try {
@@ -477,7 +477,7 @@ export async function getSheetCategories(sheetId: string): Promise<string[]> {
       const sheetCategories = localStorage.getItem(`expense-tracker-categories-${sheetId}`);
       if (sheetCategories) {
         const parsedCategories = JSON.parse(sheetCategories);
-        
+
         // If we have localStorage categories but database failed, try to sync them to database
         if (dbError && parsedCategories.length > 0) {
           try {
@@ -487,7 +487,7 @@ export async function getSheetCategories(sheetId: string): Promise<string[]> {
               category,
               display_order: index + 1
             }));
-            
+
             // Try to sync back to database
             const response = await fetch('http://localhost:4000/api/sheet_categories', {
               method: 'POST',
@@ -496,9 +496,9 @@ export async function getSheetCategories(sheetId: string): Promise<string[]> {
               },
               body: JSON.stringify(categoriesToSync),
             });
-            
+
             const data = await response.json();
-            
+
             if (!response.ok) {
               console.warn('Failed to sync categories to database:', data);
             } else {
@@ -508,14 +508,14 @@ export async function getSheetCategories(sheetId: string): Promise<string[]> {
             console.warn('Failed to sync categories to database:', syncError);
           }
         }
-        
+
         return parsedCategories;
       }
     } catch (e) {
       console.warn("Failed to get categories from localStorage:", e);
     }
   }
-  
+
   // Default categories if nothing was found
   const defaultCategories = ["food", "accessories", "transport", "investment", "others"];
   return defaultCategories;
@@ -524,11 +524,11 @@ export async function getSheetCategories(sheetId: string): Promise<string[]> {
 // Save categories to both database and localStorage
 export async function saveSheetCategories(categories: string[], sheetId: string): Promise<void> {
   if (!sheetId || isServerRendering()) return;
-  
+
   try {
     // Save to localStorage first as backup
     localStorage.setItem(`expense-tracker-categories-${sheetId}`, JSON.stringify(categories));
-    
+
     // Then try to save to database
     try {
       // First, delete existing categories for this sheet
@@ -539,14 +539,14 @@ export async function saveSheetCategories(categories: string[], sheetId: string)
         },
         body: JSON.stringify({ sheet_id: sheetId }),
       });
-      
+
       // Then insert new ones
       const categoriesToSave = categories.map((category, index) => ({
         sheet_id: sheetId,
         category,
         display_order: index + 1
       }));
-      
+
       const response = await fetch('http://localhost:4000/api/sheet_categories', {
         method: 'POST',
         headers: {
@@ -554,9 +554,9 @@ export async function saveSheetCategories(categories: string[], sheetId: string)
         },
         body: JSON.stringify(categoriesToSave),
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         console.warn('Error saving categories to database:', data);
       } else {
@@ -651,7 +651,7 @@ function isSameDay(date1: Date, date2: Date): boolean {
 export function deduplicateExpenses(expenses: Expense[]): Expense[] {
   // Group expenses by date + category
   const groupedExpenses = new Map<string, Expense[]>();
-  
+
   // Group expenses by date and category
   expenses.forEach(expense => {
     const date = new Date(expense.date);
@@ -661,7 +661,7 @@ export function deduplicateExpenses(expenses: Expense[]): Expense[] {
     }
     groupedExpenses.get(key)!.push(expense);
   });
-  
+
   // For each group, keep only the most recent expense (by created_at)
   const deduplicated: Expense[] = [];
   groupedExpenses.forEach(group => {
@@ -671,13 +671,13 @@ export function deduplicateExpenses(expenses: Expense[]): Expense[] {
       const dateB = new Date(b.created_at || 0);
       return dateB.getTime() - dateA.getTime();
     });
-    
+
     // Keep only the most recent one
     if (sorted.length > 1) {
       console.log(`Found ${sorted.length} duplicate expenses for ${sorted[0].category} on ${new Date(sorted[0].date).toLocaleDateString()}. Keeping most recent.`);
     }
     deduplicated.push(sorted[0]);
-    
+
     // Delete the duplicates from the database (async, but we don't wait)
     if (sorted.length > 1) {
       sorted.slice(1).forEach(dupe => {
@@ -686,6 +686,6 @@ export function deduplicateExpenses(expenses: Expense[]): Expense[] {
       });
     }
   });
-  
+
   return deduplicated;
 }

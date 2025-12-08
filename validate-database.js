@@ -87,7 +87,7 @@ async function checkDataStatus() {
     // Check data counts
     const dataChecks = [
       { table: 'expense_sheets', description: 'Expense sheets', expected: 3 },
-      { table: 'expenses', description: 'Expenses', expected: 209 },
+      { table: 'expenses', description: 'Expenses', expected: 210 }, // Updated to include test expense
       { table: 'sheet_categories', description: 'Sheet categories', expected: 16 },
       { table: 'column_descriptions', description: 'Column descriptions', expected: 49 }
     ];

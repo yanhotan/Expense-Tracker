@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from "date-fns"
-import { PlusCircle, Edit2, Trash2, MessageCircle } from "lucide-react"
+import { PlusCircle, Edit2, Trash2, MessageCircle, ChevronLeft, ChevronRight, Moon, Sun } from "lucide-react"
+import { useTheme } from "next-themes"
 import { Button } from "./ui/button"
 import { Card } from "./ui/card"
 import { Input } from "./ui/input"
@@ -36,6 +37,9 @@ export default function ExpenseSpreadsheet({
   currentMonth: externalCurrentMonth,
   onMonthChange
 }: ExpenseSpreadsheetProps) {
+  // --- Theme ---
+  const { theme, setTheme } = useTheme()
+
   // --- State ---
   const [currentMonth, setCurrentMonth] = useState<Date>(externalCurrentMonth || new Date())
   const [inputValues, setInputValues] = useState<Record<string, string>>({})
@@ -51,38 +55,76 @@ export default function ExpenseSpreadsheet({
   // --- Data fetching (API-based, not React Query) ---
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<string[]>([])
+  const [isLoadingExpenses, setIsLoadingExpenses] = useState(false)
+  const [fetchingExpenses, setFetchingExpenses] = useState(false) // Prevent concurrent requests
 
   const fetchExpenses = async () => {
+    if (!sheetId) return
+    if (fetchingExpenses) {
+      console.log("⏸️ Already fetching expenses, skipping duplicate request")
+      return
+    }
+
+    setFetchingExpenses(true)
+    setIsLoadingExpenses(true)
+    const startTime = Date.now()
+
     try {
-      const data = await expenseApi.getAll({ sheetId, month: `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}` })
+      console.log(`📡 Fetching expenses for sheet ${sheetId}, month: ${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`)
+
+      const data = await expenseApi.getAll({
+        sheetId,
+        month: `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`
+      })
+
+      const elapsed = Date.now() - startTime
+      console.log(`✅ Expenses fetched in ${elapsed}ms:`, data)
+
       // Defensive: handle if API returns { data: ... } or throws error
       if (data && Array.isArray(data.data)) {
-        console.log("Fetched expenses:", data.data)
+        console.log(`📊 Loaded ${data.data.length} expenses`)
         setExpenses(data.data)
       } else if (Array.isArray(data)) {
-        console.log("Fetched expenses (array):", data)
+        console.log(`📊 Loaded ${data.length} expenses (direct array)`)
         setExpenses(data)
       } else {
+        console.warn("⚠️ Unexpected data format:", data)
         setExpenses([])
       }
     } catch (error: any) {
-      // If error is from apiRequest and has .message, log and set empty array
-      console.error("Error fetching expenses:", error)
+      const elapsed = Date.now() - startTime
+      console.error(`❌ Error fetching expenses (${elapsed}ms):`, error)
       setExpenses([])
-      toast({ title: "Error", description: error?.message || "Failed to fetch expenses.", variant: "destructive" })
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to fetch expenses. Please check your connection.",
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoadingExpenses(false)
+      setFetchingExpenses(false)
     }
   }
 
   // Use API-based categories fetcher
   const fetchCategories = async () => {
+    if (!sheetId) {
+      console.warn("⚠️ No sheetId provided, cannot fetch categories")
+      return
+    }
+
     try {
-      // Use the correct backend API URL for categories
-      const res = await fetch("http://localhost:4000/api/categories")
-      if (!res.ok) throw new Error("Failed to fetch categories")
+      console.log(`📡 Fetching categories for sheet: ${sheetId}`)
+      // Use the categories API helper which goes through Next.js proxy
+      const url = `/api/categories${sheetId ? `?sheetId=${sheetId}` : ''}`
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`Failed to fetch categories: ${res.status}`)
       const data = await res.json()
-      setCategories(data.data || data || [])
+      const categoriesList = data.data || data || []
+      console.log(`✅ Loaded ${categoriesList.length} categories:`, categoriesList)
+      setCategories(categoriesList)
     } catch (error) {
-      console.error("Error fetching categories:", error)
+      console.error("❌ Error fetching categories:", error)
       setCategories([])
     }
   }  // Fetch descriptions from column_descriptions table
@@ -90,21 +132,21 @@ export default function ExpenseSpreadsheet({
     try {
       // Get descriptions from the column_descriptions table
       console.log("Fetching descriptions for sheet:", sheetId);
-      const response = await descriptionsApi.getAll({ 
+      const response = await descriptionsApi.getAll({
         sheetId,
         columnName: 'notes' // Default column name for cell descriptions
       });
-      
+
       if (response && Array.isArray(response.data)) {
         const descriptions: Record<string, string> = {};
-        
+
         // Map descriptions to expense IDs
         response.data.forEach(item => {
           if (item.expense_id && item.description) {
             descriptions[item.expense_id] = item.description;
           }
         });
-        
+
         console.log("Fetched descriptions:", descriptions);
         setColumnDescriptions(descriptions);
       }
@@ -114,12 +156,14 @@ export default function ExpenseSpreadsheet({
   }
   useEffect(() => {
     if (sheetId) {
+      console.log(`🔄 useEffect triggered: sheetId=${sheetId}, month=${currentMonth.toISOString()}`)
       fetchExpenses()
       fetchCategories()
       // Don't call fetchDescriptions here, we'll call it after expenses are loaded
     }
-  }, [sheetId, currentMonth])
-  
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetId, currentMonth.getFullYear(), currentMonth.getMonth()])
+
   // Separate useEffect to fetch descriptions whenever expenses change
   useEffect(() => {
     if (expenses.length > 0) {
@@ -133,12 +177,20 @@ export default function ExpenseSpreadsheet({
     end: endOfMonth(currentMonth),
   })
   // --- Calculation helpers ---
+  // Format date to YYYY-MM-DD in local timezone (not UTC)
+  const formatDateLocal = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   const findExpenseForCell = (date: Date, category: string) => {
     if (!expenses) return undefined
-    
-    // Format the date to ISO format (YYYY-MM-DD) for consistent comparison
-    const formattedDate = date.toISOString().split('T')[0]
-    
+
+    // Format the date to YYYY-MM-DD in local timezone (not UTC to avoid timezone shifts)
+    const formattedDate = formatDateLocal(date)
+
     // Find expense by date and category - ensuring exact date match
     return expenses.find((exp: Expense) => {
       // Compare using the formatted date string for exact matching
@@ -146,7 +198,7 @@ export default function ExpenseSpreadsheet({
       return expFormattedDate === formattedDate && exp.category === category
     })
   }
-  const getCellKey = (date: Date, category: string) => `${date.toISOString()}-${category}`
+  const getCellKey = (date: Date, category: string) => `${formatDateLocal(date)}-${category}`
   const getDescriptionForCell = (date: Date, category: string): string | undefined => {
     const expense = findExpenseForCell(date, category)
     if (!expense) return undefined
@@ -192,107 +244,138 @@ export default function ExpenseSpreadsheet({
   // --- Event handlers ---
   const handleExpenseInputChange = (date: Date, category: string, value: string) => {
     const cellKey = getCellKey(date, category)
-    setInputValues(prev => ({ ...prev, [cellKey]: value }))  }
-    const saveExpenseValue = async (date: Date, category: string) => {
+    setInputValues(prev => ({ ...prev, [cellKey]: value }))
+  }
+
+  const saveExpenseValue = async (date: Date, category: string) => {
     const cellKey = getCellKey(date, category)
     const value = inputValues[cellKey]
     if (value === undefined) return
-    setSavingCells(prev => ({ ...prev, [cellKey]: true }))
+
+    const amount = value === "" ? 0 : parseFloat(value)
+    if (isNaN(amount) && value !== "") return
+
+    // Store original state for rollback on error
+    const originalExpenses = [...expenses]
+    const originalDescriptions = { ...columnDescriptions }
+
+    const existingExpense = findExpenseForCell(date, category)
+    const formattedDate = formatDateLocal(date)
+
     try {
-      const amount = value === "" ? 0 : parseFloat(value)
-      if (isNaN(amount)) return
-      
-      const existingExpense = findExpenseForCell(date, category)
+      // OPTIMISTIC UPDATE: Update UI immediately for instant feedback
       if (existingExpense) {
-        if (amount === 0) {          // Delete the expense and its description if it exists
-          console.log("Deleting expense:", existingExpense.id)
-          await expenseApi.delete(existingExpense.id)
-          
-          // Always try to delete any associated description in the column_descriptions table
-          try {
-            console.log("Deleting description for expense:", existingExpense.id)
-            await descriptionsApi.deleteByExpenseId(existingExpense.id)
-            // Update local state to remove the description
-            setColumnDescriptions(prev => {
-              const updated = { ...prev }
-              delete updated[existingExpense.id]
-              return updated
-            })
-          } catch (descError) {
-            console.error("Error deleting description:", descError)
-            // Continue anyway as the expense was deleted
-          }
-        } else {
-          console.log("Updating expense:", existingExpense.id, "to amount:", amount)
-          try {
-            const response = await expenseApi.update(existingExpense.id, { 
-              ...existingExpense, 
-              amount,
-              // Add these fields to ensure the update works correctly
-              user_id: existingExpense.user_id || '00000000-0000-0000-0000-000000000000',
-              sheet_id: existingExpense.sheet_id || sheetId
-            })
-            console.log("Updated expense response:", response)
-          } catch (updateError) {
-            console.error("Error updating expense:", updateError)
-            throw updateError
-          }
-        }
-      } else if (amount !== 0) {        // Create new expense and get the response with the ID
-        // Format the date as YYYY-MM-DD without time component for consistent storage
-        const formattedDate = date.toISOString().split('T')[0]
-        
-        console.log("Creating new expense:", { 
-          date: formattedDate, 
-          category, 
-          amount, 
-          sheet_id: sheetId,
-          user_id: '00000000-0000-0000-0000-000000000000' // Add default user_id
-        })
-        
-        try {
-          const response = await expenseApi.create({ 
-            date: formattedDate, // Use the date without time component
-            category, 
-            amount, 
-            sheet_id: sheetId,
-            user_id: '00000000-0000-0000-0000-000000000000' // Add default user_id
+        if (amount === 0) {
+          // Optimistically remove expense from UI
+          setExpenses(prev => prev.filter(exp => exp.id !== existingExpense.id))
+          setColumnDescriptions(prev => {
+            const updated = { ...prev }
+            delete updated[existingExpense.id]
+            return updated
           })
-          console.log("Created expense response:", response)
-        } catch (createError) {
-          console.error("Error creating expense:", createError)
-          throw createError
+        } else {
+          // Optimistically update expense in UI
+          setExpenses(prev => prev.map(exp =>
+            exp.id === existingExpense.id
+              ? { ...exp, amount, date: formattedDate }
+              : exp
+          ))
         }
-      }      
-      // Clear input value for this cell
+      } else if (amount !== 0) {
+        // Optimistically add new expense to UI (temporary ID until server responds)
+        const tempId = `temp-${Date.now()}-${Math.random()}`
+        const newExpense: Expense = {
+          id: tempId,
+          date: formattedDate,
+          amount,
+          category,
+          description: undefined,
+          user_id: '00000000-0000-0000-0000-000000000000',
+          sheet_id: sheetId,
+          created_at: new Date().toISOString()
+        }
+        setExpenses(prev => [...prev, newExpense])
+      }
+
+      // Clear input value immediately
       setInputValues(prev => { const updated = { ...prev }; delete updated[cellKey]; return updated })
-      
-      // Refresh data after saving - add a small delay to ensure server has processed the change
-      console.log("Refreshing data after save...")
-      // Wait a bit to ensure the backend has processed the changes
-      await new Promise(resolve => setTimeout(resolve, 300))
-      // Fetch fresh data from the server
-      await fetchExpenses()
-      await fetchDescriptions()
-      console.log("Refresh complete")    } catch (error: any) {
+
+      // API CALL: Make actual API request in background
+      if (existingExpense) {
+        if (amount === 0) {
+          // Delete expense
+          console.log("🗑️ Deleting expense:", existingExpense.id)
+          await expenseApi.delete(existingExpense.id)
+
+          // Delete description in background (don't block on this)
+          descriptionsApi.deleteByExpenseId(existingExpense.id).catch(err =>
+            console.warn("Failed to delete description:", err)
+          )
+        } else {
+          // Update expense
+          console.log("✏️ Updating expense:", existingExpense.id, "to amount:", amount)
+          const response = await expenseApi.update(existingExpense.id, {
+            ...existingExpense,
+            amount,
+            date: formattedDate,
+            user_id: existingExpense.user_id || '00000000-0000-0000-0000-000000000000',
+            sheet_id: existingExpense.sheet_id || sheetId
+          })
+
+          // Replace with server response if available
+          if (response?.data) {
+            setExpenses(prev => prev.map(exp =>
+              exp.id === existingExpense.id ? response.data : exp
+            ))
+          }
+        }
+      } else if (amount !== 0) {
+        // Create new expense
+        console.log("➕ Creating new expense:", { date: formattedDate, category, amount })
+        const response = await expenseApi.create({
+          date: formattedDate,
+          category,
+          amount,
+          sheet_id: sheetId,
+          user_id: '00000000-0000-0000-0000-000000000000'
+        })
+
+        // Replace temporary expense with server response
+        if (response?.data) {
+          setExpenses(prev => prev.map(exp =>
+            exp.id.startsWith('temp-') && exp.date === formattedDate && exp.category === category
+              ? response.data
+              : exp
+          ))
+        }
+      }
+
+      console.log("✅ Save successful (optimistic update)")
+
+    } catch (error: any) {
+      // ROLLBACK: Revert optimistic update on error
+      setExpenses(originalExpenses)
+      setColumnDescriptions(originalDescriptions)
+
+      // Restore input value
+      setInputValues(prev => ({ ...prev, [cellKey]: value }))
+
       console.error("Error saving expense:", error)
-      
+
       // Check if it's a duplicate expense error (409 Conflict)
       if (error.message && error.message.includes("409")) {
-        toast({ 
-          title: "Duplicate Expense", 
-          description: "An expense already exists for this date and category. Try editing the existing expense instead.", 
-          variant: "destructive" 
+        toast({
+          title: "Duplicate Expense",
+          description: "An expense already exists for this date and category. Try editing the existing expense instead.",
+          variant: "destructive"
         })
       } else {
-        toast({ 
-          title: "Error saving expense", 
-          description: error.message || "Failed to save expense. Please try again.", 
-          variant: "destructive" 
+        toast({
+          title: "Error saving expense",
+          description: error.message || "Failed to save expense. Please try again.",
+          variant: "destructive"
         })
       }
-    } finally {
-      setSavingCells(prev => ({ ...prev, [cellKey]: false }))
     }
   }
   const openDescriptionDialog = (date: Date, category: string) => {
@@ -363,7 +446,8 @@ export default function ExpenseSpreadsheet({
   }
 
   // --- UI ---
-  if (!expenses.length || !categories.length) {
+  // Only show loading if we're actually loading, not if data is empty
+  if (isLoadingExpenses || (sheetId && expenses.length === 0 && categories.length === 0 && fetchingExpenses)) {
     return (
       <Card className="p-8">
         <div className="flex justify-center items-center h-64">
@@ -379,11 +463,41 @@ export default function ExpenseSpreadsheet({
     )
   }
 
+  // Show empty state if no categories (but not loading)
+  if (!categories.length && !isLoadingExpenses) {
+    return (
+      <Card className="p-8">
+        <div className="flex justify-center items-center h-64">
+          <div className="text-center">
+            <p className="text-muted-foreground">No categories found. Please add a category first.</p>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
   return (
-    <Card className="overflow-x-auto p-0">
+    // Main spreadsheet card
+    <Card className="overflow-x-auto p-0 relative">
       {/* Header: Month/Year selectors and Add Category button, styled as in reference */}
       <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/50">
         <div className="flex items-center gap-2">
+          {/* Previous Month Button */}
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => {
+              const newDate = new Date(currentMonth)
+              newDate.setMonth(newDate.getMonth() - 1)
+              setCurrentMonth(newDate)
+              onMonthChange?.(newDate)
+            }}
+            title="Previous month"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+
           <Select
             value={currentMonth.getMonth().toString()}
             onValueChange={(value: string) => {
@@ -404,6 +518,7 @@ export default function ExpenseSpreadsheet({
               ))}
             </SelectContent>
           </Select>
+
           <Select
             value={currentMonth.getFullYear().toString()}
             onValueChange={(value: string) => {
@@ -427,15 +542,59 @@ export default function ExpenseSpreadsheet({
               })}
             </SelectContent>
           </Select>
+
+          {/* Next Month Button */}
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => {
+              const newDate = new Date(currentMonth)
+              newDate.setMonth(newDate.getMonth() + 1)
+              setCurrentMonth(newDate)
+              onMonthChange?.(newDate)
+            }}
+            title="Next month"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
-        <Button variant="outline" onClick={() => setIsAddCategoryDialogOpen(true)}>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          Add Category
-        </Button>
+
+        <div className="flex items-center gap-2">
+          {/* Theme Toggle Button */}
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? (
+              <Sun className="h-4 w-4" />
+            ) : (
+              <Moon className="h-4 w-4" />
+            )}
+          </Button>
+
+          <Button variant="outline" onClick={() => setIsAddCategoryDialogOpen(true)}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Add Category
+          </Button>
+        </div>
       </div>
 
+      {/* Loading indicator */}
+      {isLoadingExpenses && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-sm text-muted-foreground">Loading expenses...</p>
+          </div>
+        </div>
+      )}
+
       {/* Spreadsheet Table - match reference layout exactly */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto relative">
         <Table className="min-w-[900px]">
           <TableHeader>
             <TableRow>
@@ -478,18 +637,18 @@ export default function ExpenseSpreadsheet({
           </TableHeader>
           <TableBody>
             {daysInMonth.map((date) => (
-              <TableRow key={date.toISOString()}>
+              <TableRow key={formatDateLocal(date)}>
                 <TableCell className="sticky left-0 z-10 bg-background font-medium w-[120px]">
                   {format(date, "EEE, MMM dd")}
                 </TableCell>
                 {categories.map((category) => (
-                  <TableCell key={`${date.toISOString()}-${category}`} className="p-0 align-middle">
+                  <TableCell key={`${formatDateLocal(date)}-${category}`} className="px-2 py-1 align-middle">
                     <div className="relative flex items-center group h-12">
                       <input
                         type="text"
                         inputMode="decimal"
                         pattern="^-?\\d*(\\.\\d{0,2})?$"
-                        placeholder="0.00"                        className={cn(
+                        placeholder="0.00" className={cn(
                           "pl-2 pr-8 w-full h-10 rounded border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none transition-colors appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                           getDescriptionForCell(date, category) ? "bg-[#D5FF74] dark:bg-[#A5D041]/20" : "",
                           parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF] dark:bg-[#7BE7FF]/20" : ""
@@ -519,7 +678,6 @@ export default function ExpenseSpreadsheet({
                           }
                         }}
                         autoComplete="off"
-                        disabled={savingCells[`${date.toISOString()}-${category}`]}
                         style={{ MozAppearance: 'textfield' }}
                       />                      <button
                         type="button"
@@ -533,14 +691,6 @@ export default function ExpenseSpreadsheet({
                       >
                         <MessageCircle className="h-4 w-4" />
                       </button>
-                      {savingCells[`${date.toISOString()}-${category}`] && (
-                        <div className="absolute right-2 top-2 h-4 w-4">
-                          <svg className="animate-spin h-4 w-4 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        </div>
-                      )}
                     </div>
                   </TableCell>
                 ))}
@@ -662,50 +812,50 @@ export default function ExpenseSpreadsheet({
               onClick={async () => {
                 try {
                   console.log("Saving description for expense ID:", descDialog.expenseId);
-                  
+
                   // Double-check that the expense exists
                   const expenseExists = expenses.some(exp => exp.id === descDialog.expenseId);
                   if (!expenseExists) {
                     throw new Error("Expense not found. Please refresh the page and try again.");
                   }
-                  
+
                   if (descDialog.value.trim() === '') {
                     // If description is empty, delete it
                     await descriptionsApi.deleteByExpenseId(descDialog.expenseId);
-                    
+
                     // Update local state
                     setColumnDescriptions(prev => {
                       const updated = { ...prev };
                       delete updated[descDialog.expenseId];
                       return updated;
                     });
-                    
+
                     toast({ title: "Description removed" });
                   } else {
                     // Save description via API to column_descriptions table with column_name='notes'
                     const response = await descriptionsApi.saveDescription(
-                      descDialog.expenseId, 
+                      descDialog.expenseId,
                       descDialog.value,
                       'notes' // Specify the column name
                     );
-                    
+
                     // Update local state with the new description
                     setColumnDescriptions(prev => ({
                       ...prev,
                       [descDialog.expenseId]: descDialog.value
                     }));
-                    
+
                     toast({ title: "Description saved" });
                   }
-                  
+
                   setDescDialog(d => ({ ...d, open: false }));
-                  
+
                   // Refresh descriptions to ensure everything is in sync
                   await fetchDescriptions();
                 } catch (error: any) {
                   console.error("Error saving description:", error);
-                  toast({ 
-                    title: "Error", 
+                  toast({
+                    title: "Error",
                     description: error.message || "Failed to save description. Please try again.",
                     variant: "destructive"
                   });

@@ -2,7 +2,11 @@
 import { Expense, ColumnDescription } from './types.js'
 
 // Base API configuration
-const API_BASE = 'http://localhost:4000/api'
+// Use relative URL to go through Next.js API routes (which proxy to backend)
+// This avoids CORS issues and works better in browser environments
+const API_BASE = process.env.NODE_ENV === 'production' 
+  ? '/api'  // Production: use relative path
+  : '/api'  // Development: use Next.js proxy (which calls backend at localhost:4000)
 
 // Generic API request function with error handling
 async function apiRequest<T>(
@@ -17,13 +21,20 @@ async function apiRequest<T>(
   }
   
   try {
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
       },
+      signal: controller.signal,
       ...options,
     })
+
+    clearTimeout(timeoutId)
 
     // Log the response status for debugging
     console.log(`API Response: ${response.status} ${response.statusText}`);
@@ -126,6 +137,7 @@ export const analyticsApi = {
       dailyTotals: Record<string, number>
       currentMonthTotal: number
       previousMonthTotal: number
+      categories: string[]
       filters: any
     }>(endpoint)
   }

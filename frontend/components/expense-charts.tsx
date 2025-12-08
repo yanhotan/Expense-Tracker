@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
 import { ExpensesByCategory } from "./charts/expenses-by-category"
 import { MonthlyExpenses } from "./charts/monthly-expenses"
-import { getExpenses } from "../lib/data"
+import { analyticsApi } from "../lib/api"
 
 export function ExpenseCharts({ sheetId }: { sheetId: string }) {
   const [categoryTotals, setCategoryTotals] = useState<Record<string, number>>({})
@@ -20,42 +20,21 @@ export function ExpenseCharts({ sheetId }: { sheetId: string }) {
         console.warn('No sheet ID provided, cannot load chart data')
         return
       }
-      
+
       try {
         setIsLoading(true)
-        // We need to update the data methods to filter by sheetId
-        const expenses = await getExpenses(sheetId)
-        
-        // Before using expenses.reduce, ensure expenses is an array
-        const safeExpenses = Array.isArray(expenses) ? expenses : [];
-        
-        // Calculate category totals for this sheet
-        const categoryData = safeExpenses.reduce(
-          (acc, expense) => {
-            const category = expense.category
-            acc[category] = (acc[category] || 0) + expense.amount
-            return acc
-          },
-          {} as Record<string, number>
-        )
-        
-        // Calculate monthly totals for this sheet
-        const monthlyData: Record<string, number> = {}
-        safeExpenses.forEach((expense) => {
-          const date = new Date(expense.date)
-          const monthYear = `${date.toLocaleString("default", { month: "short" })} ${date.getFullYear()}`
-          monthlyData[monthYear] = (monthlyData[monthYear] || 0) + expense.amount
-        })
-        
-        setCategoryTotals(categoryData)
-        setMonthlyTotals(monthlyData)
+        // Get analytics data from API - much simpler!
+        const response = await analyticsApi.getAll({ sheetId })
+
+        setCategoryTotals(response.categoryTotals)
+        setMonthlyTotals(response.monthlyTotals)
       } catch (error) {
         console.error('Error loading chart data:', error)
       } finally {
         setIsLoading(false)
       }
     }
-    
+
     loadData()
   }, [sheetId]) // Re-run when sheet changes
 

@@ -4,14 +4,18 @@ import { useEffect, useState } from "react"
 import { ArrowDownIcon, ArrowUpIcon, DollarSign } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getExpenses, getCurrentMonthTotal, getPreviousMonthTotal, getCategoryTotals } from "@/lib/data"
-import type { Expense } from "@/lib/data"
+import { analyticsApi } from "@/lib/api"
 
 export function ExpenseSummary() {
-  const [expenses, setExpenses] = useState<Expense[]>([])
-  const [currentMonthTotal, setCurrentMonthTotal] = useState<number>(0)
-  const [previousMonthTotal, setPreviousMonthTotal] = useState<number>(0)
-  const [categoryTotals, setCategoryTotals] = useState<Record<string, number>>({})
+  const [analytics, setAnalytics] = useState<{
+    categoryTotals: Record<string, number>
+    currentMonthTotal: number
+    previousMonthTotal: number
+  }>({
+    categoryTotals: {},
+    currentMonthTotal: 0,
+    previousMonthTotal: 0
+  })
   const [isLoading, setIsLoading] = useState(true)
 
   // Fetch data
@@ -19,17 +23,15 @@ export function ExpenseSummary() {
     async function loadData() {
       setIsLoading(true)
       try {
-        // Fetch all data needed for this component
-        const fetchedExpenses = await getExpenses()
-        const currentTotal = await getCurrentMonthTotal()
-        const prevTotal = await getPreviousMonthTotal()
-        const categories = await getCategoryTotals()
+        // Fetch analytics data from API
+        const response = await analyticsApi.getAll()
 
-        // Update state
-        setExpenses(fetchedExpenses)
-        setCurrentMonthTotal(currentTotal)
-        setPreviousMonthTotal(prevTotal)
-        setCategoryTotals(categories)
+        // Update state with analytics data
+        setAnalytics({
+          categoryTotals: response.categoryTotals,
+          currentMonthTotal: response.currentMonthTotal,
+          previousMonthTotal: response.previousMonthTotal
+        })
       } catch (error) {
         console.error('Error loading expense summary data:', error)
       } finally {
@@ -41,10 +43,10 @@ export function ExpenseSummary() {
   }, [])
 
   // Find the category with the highest spending
-  const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0] || ["None", 0]
+  const topCategory = Object.entries(analytics.categoryTotals).sort((a, b) => b[1] - a[1])[0] || ["None", 0]
 
   // Calculate month-over-month change
-  const percentChange = previousMonthTotal ? ((currentMonthTotal - previousMonthTotal) / previousMonthTotal) * 100 : 0
+  const percentChange = analytics.previousMonthTotal ? ((analytics.currentMonthTotal - analytics.previousMonthTotal) / analytics.previousMonthTotal) * 100 : 0
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -81,8 +83,8 @@ export function ExpenseSummary() {
           <DollarSign className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{formatCurrency(currentMonthTotal)}</div>
-          {previousMonthTotal > 0 && (
+          <div className="text-2xl font-bold">{formatCurrency(analytics.currentMonthTotal)}</div>
+          {analytics.previousMonthTotal > 0 && (
             <p className="text-xs text-muted-foreground flex items-center mt-1">
               {percentChange > 0 ? (
                 <>
@@ -141,8 +143,8 @@ export function ExpenseSummary() {
           </svg>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{expenses.length}</div>
-          <p className="text-xs text-muted-foreground mt-1">Across {Object.keys(categoryTotals).length} categories</p>
+          <div className="text-2xl font-bold">N/A</div>
+          <p className="text-xs text-muted-foreground mt-1">Across {Object.keys(analytics.categoryTotals).length} categories</p>
         </CardContent>
       </Card>
     </>

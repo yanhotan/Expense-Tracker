@@ -18,7 +18,8 @@ import { Input } from "./ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table"
 import { toast } from "./ui/use-toast"
-import { type Expense, deleteExpense, updateExpense, getCategoryColor, getCategories } from "../lib/data"
+import { type Expense, getCategoryColor, getCategories } from "../lib/data"
+import { expenseApi } from "../lib/api"
 import { useRouter } from "next/navigation"
 
 interface ExpenseTableProps {
@@ -44,7 +45,7 @@ export function ExpenseTable({ expenses }: ExpenseTableProps) {
     if (selectedExpense) {
       setIsSubmitting(true)
       try {
-        await deleteExpense(selectedExpense.id)
+        await expenseApi.delete(selectedExpense.id)
         toast({
           title: "Expense deleted",
           description: "The expense has been deleted successfully.",
@@ -87,8 +88,7 @@ export function ExpenseTable({ expenses }: ExpenseTableProps) {
 
       setIsSubmitting(true)
       try {
-        await updateExpense({
-          ...selectedExpense,
+        await expenseApi.update(selectedExpense.id, {
           amount,
           category: editedCategory,
           description: editedDescription,

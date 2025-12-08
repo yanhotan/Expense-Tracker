@@ -10,9 +10,12 @@ router.get('/', async (req, res) => {
   // Hardcode user_id for demo/testing
   const user_id = '00000000-0000-0000-0000-000000000000';
   const { sheetId, month, year } = req.query;
-  if (!sheetId) return res.status(400).json({ error: 'Missing sheetId' });
-  // Get all expenses for the sheet and month/year
-  let query = supabase.from('expenses').select('*').eq('sheet_id', sheetId).eq('user_id', user_id);
+
+  // Get all expenses for the user (optionally filtered by sheet)
+  let query = supabase.from('expenses').select('*').eq('user_id', user_id);
+  if (sheetId) {
+    query = query.eq('sheet_id', sheetId);
+  }
   if (month) query = query.ilike('date', `${month}-%`);
   if (year) query = query.ilike('date', `${year}-%`);
   const { data, error } = await query;

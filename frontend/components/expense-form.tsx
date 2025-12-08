@@ -18,7 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Textarea } from "./ui/textarea"
 import { toast } from "./ui/use-toast"
 import { cn } from "../lib/utils"
-import { addExpense, getCategories, getSheetCategories } from "../lib/data"
+import { getCategories, getSheetCategories } from "../lib/data"
+import { expenseApi, categoriesApi } from "../lib/api"
 import { getLastAccessedSheet } from "../lib/sheets"
 
 // Separate component that uses useSearchParams
@@ -41,7 +42,8 @@ function ExpenseFormContent() {
         setSheetId(urlSheetId);
         // Get sheet-specific categories from database
         try {
-          const dbCategories = await getSheetCategories(urlSheetId);
+          const response = await categoriesApi.getAll(urlSheetId);
+          const dbCategories = response.data;
           setCategories(dbCategories);
         } catch (error) {
           console.error("Failed to load categories:", error);
@@ -55,7 +57,8 @@ function ExpenseFormContent() {
           setSheetId(lastSheet);
           // Get sheet-specific categories for the last sheet from database
           try {
-            const dbCategories = await getSheetCategories(lastSheet);
+            const response = await categoriesApi.getAll(lastSheet);
+            const dbCategories = response.data;
             setCategories(dbCategories);
           } catch (error) {
             console.error("Failed to load categories:", error);
@@ -110,14 +113,13 @@ function ExpenseFormContent() {
     }
 
     try {
-      await addExpense({
-        id: uuidv4(),
-        date: date.toISOString(),
+      await expenseApi.create({
+        date: date.toISOString().split('T')[0], // Format as YYYY-MM-DD
         amount,
         category,
-        description,
+        description: description || undefined,
         sheet_id: sheetId,
-      }, sheetId);
+      });
 
       toast({
         title: "Expense added",

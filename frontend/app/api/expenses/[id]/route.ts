@@ -1,85 +1,83 @@
-// import { NextRequest, NextResponse } from 'next/server'
-// import { supabase, getCurrentUserId } from '@/lib/supabase'
+import { NextRequest, NextResponse } from 'next/server'
 
-// // PUT /api/expenses/[id] - Update expense
-// export async function PUT(
-//   request: NextRequest,
-//   { params }: { params: { id: string } }
-// ) {
-//   try {
-//     const body = await request.json()
-//     const { date, amount, category, description } = body
+// PUT /api/expenses/[id] - Proxy to backend API
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const body = await request.json()
+    const backendUrl = `http://localhost:4000/api/expenses/${params.id}`
 
-//     const user_id = await getCurrentUserId()
-//     if (!user_id) {
-//       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-//     }
+    console.log(`📡 Expenses PUT proxy: ${backendUrl}`, body)
 
-//     const updates = {
-//       date,
-//       amount: parseFloat(amount),
-//       category,
-//       description: description || null
-//     }
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-//     const { data, error } = await supabase
-//       .from('expenses')
-//       .update(updates)
-//       .eq('id', params.id)
-//       .eq('user_id', user_id) // Security: only update own expenses
-//       .select()
-//       .single()
+    const response = await fetch(backendUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
 
-//     if (error) {
-//       console.error('Database error:', error)
-//       return NextResponse.json({ error: 'Database error' }, { status: 500 })
-//     }
+    clearTimeout(timeoutId)
 
-//     if (!data) {
-//       return NextResponse.json({ error: 'Expense not found' }, { status: 404 })
-//     }
+    const data = await response.json()
 
-//     return NextResponse.json({ data })
+    if (!response.ok) {
+      return NextResponse.json(data, { status: response.status })
+    }
 
-//   } catch (error) {
-//     console.error('API error:', error)
-//     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-//   }
-// }
+    return NextResponse.json(data, { status: response.status })
 
-// // DELETE /api/expenses/[id] - Delete expense
-// export async function DELETE(
-//   request: NextRequest,
-//   { params }: { params: { id: string } }
-// ) {
-//   try {
-//     const user_id = await getCurrentUserId()
-//     if (!user_id) {
-//       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-//     }
+  } catch (error: any) {
+    console.error('Expenses PUT proxy error:', error)
+    if (error.name === 'AbortError') {
+      return NextResponse.json({ error: 'Request timeout' }, { status: 504 })
+    }
+    return NextResponse.json({ error: 'Internal server error', details: error.message }, { status: 500 })
+  }
+}
 
-//     // First delete associated column descriptions
-//     await supabase
-//       .from('column_descriptions')
-//       .delete()
-//       .eq('expense_id', params.id)
+// DELETE /api/expenses/[id] - Proxy to backend API
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const backendUrl = `http://localhost:4000/api/expenses/${params.id}`
 
-//     // Then delete the expense
-//     const { error } = await supabase
-//       .from('expenses')
-//       .delete()
-//       .eq('id', params.id)
-//       .eq('user_id', user_id) // Security: only delete own expenses
+    console.log(`📡 Expenses DELETE proxy: ${backendUrl}`)
 
-//     if (error) {
-//       console.error('Database error:', error)
-//       return NextResponse.json({ error: 'Database error' }, { status: 500 })
-//     }
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-//     return NextResponse.json({ success: true })
+    const response = await fetch(backendUrl, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    })
 
-//   } catch (error) {
-//     console.error('API error:', error)
-//     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-//   }
-// }
+    clearTimeout(timeoutId)
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      return NextResponse.json(data, { status: response.status })
+    }
+
+    return NextResponse.json(data, { status: response.status })
+
+  } catch (error: any) {
+    console.error('Expenses DELETE proxy error:', error)
+    if (error.name === 'AbortError') {
+      return NextResponse.json({ error: 'Request timeout' }, { status: 504 })
+    }
+    return NextResponse.json({ error: 'Internal server error', details: error.message }, { status: 500 })
+  }
+}
