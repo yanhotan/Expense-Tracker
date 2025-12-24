@@ -5,7 +5,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const queryString = searchParams.toString()
-    const backendUrl = `http://localhost:4000/api/expenses${queryString ? `?${queryString}` : ''}`
+    const backendUrl = `http://localhost:8080/api/expenses${queryString ? `?${queryString}` : ''}`
 
     console.log(`📡 Expenses proxy: ${backendUrl}`)
 
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const backendUrl = 'http://localhost:4000/api/expenses'
+    const backendUrl = 'http://localhost:8080/api/expenses'
 
     console.log(`📡 Expenses POST proxy: ${backendUrl}`, body)
 

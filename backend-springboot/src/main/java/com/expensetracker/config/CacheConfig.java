@@ -13,29 +13,31 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 import java.time.Duration;
 
 @Configuration
-@EnableCaching
+// Temporarily disable caching to avoid Redis connection issues during debugging
+// @EnableCaching
 public class CacheConfig {
 
-    @Bean
-    public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
-        RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(Duration.ofHours(1)) // Cache for 1 hour
-                .disableCachingNullValues();
+    // Temporarily commented out to avoid Redis connection issues
+    // @Bean
+    // public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
+    //     RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
+    //             .entryTtl(Duration.ofHours(1)) // Cache for 1 hour
+    //             .disableCachingNullValues();
+    //
+    //     return RedisCacheManager.builder(connectionFactory)
+    //             .cacheDefaults(config)
+    //             .build();
+    // }
 
-        return RedisCacheManager.builder(connectionFactory)
-                .cacheDefaults(config)
-                .build();
-    }
-
-    @Bean
-    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
-        RedisTemplate<String, Object> template = new RedisTemplate<>();
-        template.setConnectionFactory(connectionFactory);
-        template.setKeySerializer(new StringRedisSerializer());
-        template.setValueSerializer(new GenericJackson2JsonRedisSerializer());
-        template.setHashKeySerializer(new StringRedisSerializer());
-        template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer());
-        template.afterPropertiesSet();
-        return template;
-    }
+    // @Bean
+    // public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
+    //     RedisTemplate<String, Object> template = new RedisTemplate<>();
+    //     template.setConnectionFactory(connectionFactory);
+    //     template.setKeySerializer(new StringRedisSerializer());
+    //     template.setValueSerializer(new GenericJackson2JsonRedisSerializer());
+    //     template.setHashKeySerializer(new StringRedisSerializer());
+    //     template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer());
+    //     template.afterPropertiesSet();
+    //     return template;
+    // }
 }

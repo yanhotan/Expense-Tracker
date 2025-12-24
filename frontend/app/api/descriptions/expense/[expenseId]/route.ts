@@ -6,7 +6,7 @@ export async function DELETE(
 ) {
     try {
         const { expenseId } = params
-        const backendUrl = `http://localhost:4000/api/descriptions/expense/${expenseId}`
+        const backendUrl = `http://localhost:8080/api/descriptions/expense/${expenseId}`
 
         console.log(`📡 Descriptions (by expense) DELETE proxy: ${backendUrl}`)
 

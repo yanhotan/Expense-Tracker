@@ -440,85 +440,28 @@ export function updateCategoryName(oldName: string, newName: string, sheetId?: s
 }
 
 // Get categories from both database and localStorage
+// Updated to use Spring Boot API
 export async function getSheetCategories(sheetId: string): Promise<string[]> {
   if (!sheetId || isServerRendering()) {
     return ["food", "accessories", "transport", "investment", "others"];
   }
 
-  // First try to get from database
-  let dbCategories: string[] = [];
-  let dbError = false;
-
   try {
-    const response = await fetch(`http://localhost:4000/api/sheet_categories?sheet_id=eq.${sheetId}`);
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.warn('Error fetching categories from database:', data);
-      dbError = true;
-    } else if (data && data.length > 0) {
-      dbCategories = data.map((row: any) => row.category);
-      console.log('Categories fetched from database:', dbCategories);
-
-      // Sync to localStorage as backup
-      localStorage.setItem(`expense-tracker-categories-${sheetId}`, JSON.stringify(dbCategories));
-
-      return dbCategories;
+    // Use Spring Boot API via categoriesApi
+    const { categoriesApi } = await import('./api');
+    const response = await categoriesApi.getAll(sheetId);
+    const categories = response.data || [];
+    
+    if (categories.length > 0) {
+      console.log('✅ Categories fetched from Spring Boot:', categories);
+      return categories;
     }
   } catch (error) {
-    console.warn('Exception fetching categories from database:', error);
-    dbError = true;
-  }
-
-  // If we couldn't get from database, try localStorage
-  if (dbError || dbCategories.length === 0) {
-    try {
-      // Get from localStorage as fallback
-      const sheetCategories = localStorage.getItem(`expense-tracker-categories-${sheetId}`);
-      if (sheetCategories) {
-        const parsedCategories = JSON.parse(sheetCategories);
-
-        // If we have localStorage categories but database failed, try to sync them to database
-        if (dbError && parsedCategories.length > 0) {
-          try {
-            const categoriesToSync = parsedCategories.map((category: string, index: number) => ({
-              id: uuidv4(), // Add unique ID for each category
-              sheet_id: sheetId,
-              category,
-              display_order: index + 1
-            }));
-
-            // Try to sync back to database
-            const response = await fetch('http://localhost:4000/api/sheet_categories', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(categoriesToSync),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-              console.warn('Failed to sync categories to database:', data);
-            } else {
-              console.log('Categories synced from localStorage to database');
-            }
-          } catch (syncError) {
-            console.warn('Failed to sync categories to database:', syncError);
-          }
-        }
-
-        return parsedCategories;
-      }
-    } catch (e) {
-      console.warn("Failed to get categories from localStorage:", e);
-    }
+    console.warn('❌ Error fetching categories from Spring Boot:', error);
   }
 
   // Default categories if nothing was found
-  const defaultCategories = ["food", "accessories", "transport", "investment", "others"];
-  return defaultCategories;
+  return ["food", "accessories", "transport", "investment", "others"];
 }
 
 // Save categories to both database and localStorage

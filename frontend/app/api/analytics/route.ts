@@ -5,7 +5,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const queryString = searchParams.toString()
-    const backendUrl = `http://localhost:4000/api/analytics${queryString ? `?${queryString}` : ''}`
+    const backendUrl = `http://localhost:8080/api/analytics${queryString ? `?${queryString}` : ''}`
 
     console.log(`📊 Analytics proxy: ${backendUrl}`)
 

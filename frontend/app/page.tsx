@@ -103,6 +103,8 @@ export default function Home() {
             <div className="min-w-full">
               <ExpenseSpreadsheet 
                 sheetId={selectedSheet} 
+                currentMonth={selectedMonth}
+                onMonthChange={handleMonthChange}
                 key={`spreadsheet-${refreshTrigger}`}
               />
             </div>

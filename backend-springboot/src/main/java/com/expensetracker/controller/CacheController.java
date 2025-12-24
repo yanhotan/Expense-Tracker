@@ -1,15 +1,18 @@
 package com.expensetracker.controller;
 
 import com.expensetracker.service.RedisService;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
  * Example controller showing how to use Redis for caching in your application.
  * This demonstrates various Redis operations for different use cases.
+ * Only enabled when RedisTemplate bean is available.
  */
 @RestController
 @RequestMapping("/api/cache")
+@ConditionalOnBean(name = "redisTemplate")
 public class CacheController {
 
     private final RedisService redisService;

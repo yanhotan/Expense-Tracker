@@ -1,5 +1,6 @@
 package com.expensetracker.service;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
@@ -11,8 +12,10 @@ import java.util.concurrent.TimeUnit;
 /**
  * Service demonstrating various Redis operations for caching and data storage.
  * Shows how to use RedisTemplate for direct Redis access beyond Spring Cache.
+ * Only enabled when RedisTemplate bean is available.
  */
 @Service
+@ConditionalOnBean(name = "redisTemplate")
 public class RedisService {
 
     private final RedisTemplate<String, Object> redisTemplate;

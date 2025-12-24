@@ -1,14 +1,20 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { format } from "date-fns"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
 import { ExpensesByCategory } from "./charts/expenses-by-category"
 import { MonthlyExpenses } from "./charts/monthly-expenses"
-import { analyticsApi } from "../lib/api"
+import { analyticsApi, expenseApi } from "../lib/api"
 
-export function ExpenseCharts({ sheetId }: { sheetId: string }) {
+interface ExpenseChartsProps {
+  sheetId: string
+  selectedMonth?: Date
+}
+
+export function ExpenseCharts({ sheetId, selectedMonth }: ExpenseChartsProps) {
   const [categoryTotals, setCategoryTotals] = useState<Record<string, number>>({})
   const [monthlyTotals, setMonthlyTotals] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
@@ -23,11 +29,39 @@ export function ExpenseCharts({ sheetId }: { sheetId: string }) {
 
       try {
         setIsLoading(true)
-        // Get analytics data from API - much simpler!
-        const response = await analyticsApi.getAll({ sheetId })
+        
+        // For category totals: use month filter to show selected month's categories
+        const monthParam = selectedMonth 
+          ? format(selectedMonth, 'yyyy-MM')
+          : undefined
+        
+        // Fetch category totals with month filter
+        const categoryResponse = await analyticsApi.getAll({ 
+          sheetId,
+          month: monthParam
+        })
+        
+        // For monthly totals: fetch ALL expenses to calculate monthly totals for all months
+        // The backend analytics API defaults to current month when no filter is provided,
+        // so we fetch expenses directly and calculate monthly totals ourselves
+        const allExpensesResponse = await expenseApi.getAll({ sheetId })
+        const allExpenses = Array.isArray(allExpensesResponse.data) 
+          ? allExpensesResponse.data 
+          : allExpensesResponse.data?.data || []
+        
+        // Calculate monthly totals from all expenses
+        const monthlyTotalsMap: Record<string, number> = {}
+        allExpenses.forEach((expense: any) => {
+          if (expense.date) {
+            // Extract year-month from date (format: YYYY-MM-DD or ISO string)
+            const dateStr = expense.date.split('T')[0] // Handle ISO format
+            const yearMonth = dateStr.substring(0, 7) // Get YYYY-MM
+            monthlyTotalsMap[yearMonth] = (monthlyTotalsMap[yearMonth] || 0) + (expense.amount || 0)
+          }
+        })
 
-        setCategoryTotals(response.categoryTotals)
-        setMonthlyTotals(response.monthlyTotals)
+        setCategoryTotals(categoryResponse.categoryTotals)
+        setMonthlyTotals(monthlyTotalsMap)
       } catch (error) {
         console.error('Error loading chart data:', error)
       } finally {
@@ -36,7 +70,7 @@ export function ExpenseCharts({ sheetId }: { sheetId: string }) {
     }
 
     loadData()
-  }, [sheetId]) // Re-run when sheet changes
+  }, [sheetId, selectedMonth ? format(selectedMonth, 'yyyy-MM') : null]) // Re-run when sheet or month changes (use string for reliable comparison)
 
   return (
     <Tabs defaultValue="categories">
@@ -61,7 +95,11 @@ export function ExpenseCharts({ sheetId }: { sheetId: string }) {
             <Card>
               <CardHeader>
                 <CardTitle>Expenses by Category</CardTitle>
-                <CardDescription>Breakdown of your spending across different categories</CardDescription>
+                <CardDescription>
+                  {selectedMonth 
+                    ? `Breakdown of your spending for ${format(selectedMonth, 'MMMM yyyy')}`
+                    : 'Breakdown of your spending across different categories'}
+                </CardDescription>
               </CardHeader>
               <CardContent className="h-[400px]">
                 <ExpensesByCategory data={categoryTotals} />
@@ -73,10 +111,15 @@ export function ExpenseCharts({ sheetId }: { sheetId: string }) {
             <Card>
               <CardHeader>
                 <CardTitle>Monthly Expenses</CardTitle>
-                <CardDescription>Your spending trend over the past months</CardDescription>
+                <CardDescription>
+                  Your spending trend across all available months
+                </CardDescription>
               </CardHeader>
               <CardContent className="h-[400px]">
-                <MonthlyExpenses data={monthlyTotals} />
+                <MonthlyExpenses 
+                  data={monthlyTotals} 
+                  selectedYear={selectedMonth?.getFullYear()}
+                />
               </CardContent>
             </Card>
           </TabsContent>

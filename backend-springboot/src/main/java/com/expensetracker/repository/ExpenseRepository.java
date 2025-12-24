@@ -24,11 +24,9 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
 
     /**
      * Find all expenses for a specific user with pagination.
-     * Uses EntityGraph to eagerly fetch sheet relationship.
-     * Cached for 30 minutes to improve performance.
+     * EntityGraph removed temporarily to avoid issues with large result sets.
+     * Note: Cacheable annotation removed temporarily to avoid cache key generation issues.
      */
-    @EntityGraph(attributePaths = {"sheet"})
-    @org.springframework.cache.annotation.Cacheable(value = "expenses", key = "'user_' + #userId + '_page_' + #pageable.pageNumber + '_size_' + #pageable.pageSize")
     Page<Expense> findByUserId(UUID userId, Pageable pageable);
 
     /**

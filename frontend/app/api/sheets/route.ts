@@ -1,66 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!)
-
-// GET /api/sheets - Get all expense sheets
+// GET /api/sheets - Proxy to Spring Boot backend
 export async function GET() {
   try {
-    // For demo/testing, use a hardcoded user_id
-    const user_id = '00000000-0000-0000-0000-000000000000'
+    const backendUrl = 'http://localhost:8080/api/sheets'
 
-    const { data, error } = await supabase
-      .from('expense_sheets')
-      .select('*')
-      .eq('user_id', user_id)
-      .order('created_at', { ascending: false })
+    console.log(`📡 Sheets proxy: ${backendUrl}`)
 
-    if (error) {
-      console.error('Database error:', error)
-      return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+    const response = await fetch(backendUrl, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Backend error' }))
+      return NextResponse.json(errorData, { status: response.status })
     }
 
-    return NextResponse.json({ data: data || [] })
-
-  } catch (error) {
-    console.error('API error:', error)
+    const data = await response.json()
+    return NextResponse.json(data)
+  } catch (error: any) {
+    console.error('Sheets proxy error:', error)
+    if (error.name === 'AbortError') {
+      return NextResponse.json({ error: 'Request timeout' }, { status: 504 })
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
-// POST /api/sheets - Create new sheet
+// POST /api/sheets - Proxy to Spring Boot backend
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, name, pin, has_pin, created_at } = body
+    const backendUrl = 'http://localhost:8080/api/sheets'
 
-    // For demo/testing, use a hardcoded user_id
-    const user_id = '00000000-0000-0000-0000-000000000000'
+    console.log(`📡 Sheets POST proxy: ${backendUrl}`, body)
 
-    const newSheet = {
-      id: id || undefined, // allow client to provide id for sync
-      name,
-      pin: pin || null,
-      has_pin: has_pin || !!pin,
-      created_at: created_at || new Date().toISOString(),
-      user_id
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+    const response = await fetch(backendUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      return NextResponse.json(data, { status: response.status })
     }
 
-    const { data, error } = await supabase
-      .from('expense_sheets')
-      .insert(newSheet)
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Database error:', error)
-      return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    return NextResponse.json(data, { status: response.status })
+  } catch (error: any) {
+    console.error('Sheets POST proxy error:', error)
+    if (error.name === 'AbortError') {
+      return NextResponse.json({ error: 'Request timeout' }, { status: 504 })
     }
-
-    return NextResponse.json(data, { status: 201 })
-
-  } catch (error) {
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error', details: error.message }, { status: 500 })
   }
 }

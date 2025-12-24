@@ -7,7 +7,7 @@ export async function PUT(
 ) {
   try {
     const body = await request.json()
-    const backendUrl = `http://localhost:4000/api/expenses/${params.id}`
+    const backendUrl = `http://localhost:8080/api/expenses/${params.id}`
 
     console.log(`📡 Expenses PUT proxy: ${backendUrl}`, body)
 
@@ -48,7 +48,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const backendUrl = `http://localhost:4000/api/expenses/${params.id}`
+    const backendUrl = `http://localhost:8080/api/expenses/${params.id}`
 
     console.log(`📡 Expenses DELETE proxy: ${backendUrl}`)
 

@@ -5,13 +5,17 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const queryString = searchParams.toString()
-    const backendUrl = `http://localhost:4000/api/categories${queryString ? `?${queryString}` : ''}`
+    const backendUrl = `http://localhost:8080/api/categories${queryString ? `?${queryString}` : ''}`
 
     console.log(`📡 Categories proxy: ${backendUrl}`)
 
     // Add timeout to prevent hanging
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/89b6f77c-03af-434f-8eb7-35c223892034',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'categories/route.ts:16',message:'Before fetch to Spring Boot',data:{backendUrl,queryString},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
     const response = await fetch(backendUrl, {
       headers: {
@@ -22,8 +26,18 @@ export async function GET(request: NextRequest) {
 
     clearTimeout(timeoutId)
 
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/89b6f77c-03af-434f-8eb7-35c223892034',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'categories/route.ts:25',message:'After fetch response',data:{status:response.status,statusText:response.statusText,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Backend error' }))
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/89b6f77c-03af-434f-8eb7-35c223892034',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'categories/route.ts:30',message:'Error response from Spring Boot',data:{status:response.status,errorData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      console.error('❌ Spring Boot error response:', errorData)
       return NextResponse.json(errorData, { status: response.status })
     }
 
@@ -31,11 +45,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data)
 
   } catch (error: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/89b6f77c-03af-434f-8eb7-35c223892034',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'categories/route.ts:38',message:'Exception caught in categories route',data:{errorName:error?.name,errorMessage:error?.message,errorStack:error?.stack,backendUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
     console.error('Categories proxy error:', error)
     if (error.name === 'AbortError') {
       return NextResponse.json({ error: 'Request timeout' }, { status: 504 })
     }
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error', details: error.message }, { status: 500 })
   }
 }
 

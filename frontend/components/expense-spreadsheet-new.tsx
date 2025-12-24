@@ -154,6 +154,13 @@ export default function ExpenseSpreadsheet({
       console.error("Error fetching descriptions:", error);
     }
   }
+  // Sync external currentMonth prop with internal state
+  useEffect(() => {
+    if (externalCurrentMonth && externalCurrentMonth.getTime() !== currentMonth.getTime()) {
+      setCurrentMonth(externalCurrentMonth)
+    }
+  }, [externalCurrentMonth])
+
   useEffect(() => {
     if (sheetId) {
       console.log(`🔄 useEffect triggered: sheetId=${sheetId}, month=${currentMonth.toISOString()}`)
@@ -641,59 +648,76 @@ export default function ExpenseSpreadsheet({
                 <TableCell className="sticky left-0 z-10 bg-background font-medium w-[120px]">
                   {format(date, "EEE, MMM dd")}
                 </TableCell>
-                {categories.map((category) => (
-                  <TableCell key={`${formatDateLocal(date)}-${category}`} className="px-2 py-1 align-middle">
-                    <div className="relative flex items-center group h-12">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        pattern="^-?\\d*(\\.\\d{0,2})?$"
-                        placeholder="0.00" className={cn(
-                          "pl-2 pr-8 w-full h-10 rounded border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none transition-colors appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                          getDescriptionForCell(date, category) ? "bg-[#D5FF74] dark:bg-[#A5D041]/20" : "",
-                          parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF] dark:bg-[#7BE7FF]/20" : ""
-                        )}
-                        value={getExpenseAmount(date, category)}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          const val = e.target.value
-                          if (/^-?\d*(\.\d{0,2})?$/.test(val) || val === "") {
-                            handleExpenseInputChange(date, category, val)
-                          }
-                        }}
-                        onBlur={() => {
-                          const cellKey = getCellKey(date, category)
-                          const value = inputValues[cellKey]
-                          if (value !== undefined) {
-                            saveExpenseValue(date, category)
-                          }
-                        }}
-                        onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-                          if (e.key === 'Enter') {
-                            saveExpenseValue(date, category)
-                            const element = e.target as HTMLElement
-                            const nextInput = element.closest('tr')?.nextElementSibling?.querySelector('input')
-                            if (nextInput) {
-                              (nextInput as HTMLInputElement).focus()
-                            }
-                          }
-                        }}
-                        autoComplete="off"
-                        style={{ MozAppearance: 'textfield' }}
-                      />                      <button
-                        type="button"
-                        className={`absolute right-1 h-6 w-6 flex items-center justify-center opacity-100 transition-opacity z-10 ${getDescriptionForCell(date, category) ? 'text-blue-500' : 'text-gray-400'}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          openDescriptionDialog(date, category);
-                        }}
-                        tabIndex={-1}
-                        title={getDescriptionForCell(date, category) ? 'Edit description' : 'Add description'}
-                      >
-                        <MessageCircle className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </TableCell>
-                ))}
+                {categories.map((category) => {
+                  const cellDescription = getDescriptionForCell(date, category)
+                  return (
+                    <TableCell key={`${formatDateLocal(date)}-${category}`} className="px-2 py-1 align-middle">
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="relative flex items-center group h-12 w-full">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                pattern="^-?\\d*(\\.\\d{0,2})?$"
+                                placeholder="0.00" className={cn(
+                                  "pl-2 pr-8 w-full h-10 rounded border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none transition-colors appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                  cellDescription ? "bg-[#D5FF74] dark:bg-[#A5D041]/20" : "",
+                                  parseFloat(getExpenseAmount(date, category)) < 0 ? "bg-[#7BE7FF] dark:bg-[#7BE7FF]/20" : ""
+                                )}
+                                value={getExpenseAmount(date, category)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                  const val = e.target.value
+                                  if (/^-?\d*(\.\d{0,2})?$/.test(val) || val === "") {
+                                    handleExpenseInputChange(date, category, val)
+                                  }
+                                }}
+                                onBlur={() => {
+                                  const cellKey = getCellKey(date, category)
+                                  const value = inputValues[cellKey]
+                                  if (value !== undefined) {
+                                    saveExpenseValue(date, category)
+                                  }
+                                }}
+                                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                                  if (e.key === 'Enter') {
+                                    saveExpenseValue(date, category)
+                                    const element = e.target as HTMLElement
+                                    const nextInput = element.closest('tr')?.nextElementSibling?.querySelector('input')
+                                    if (nextInput) {
+                                      (nextInput as HTMLInputElement).focus()
+                                    }
+                                  }
+                                }}
+                                autoComplete="off"
+                                style={{ MozAppearance: 'textfield' }}
+                              />
+                              <button
+                                type="button"
+                                className={`absolute right-1 h-6 w-6 flex items-center justify-center opacity-100 transition-opacity z-10 ${cellDescription ? 'text-blue-500' : 'text-gray-400'}`}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openDescriptionDialog(date, category);
+                                }}
+                                tabIndex={-1}
+                                title={cellDescription ? 'Edit description' : 'Add description'}
+                              >
+                                <MessageCircle className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </TooltipTrigger>
+                          {cellDescription && (
+                            <TooltipContent side="top" className="max-w-xs z-50">
+                              <p className="font-medium mb-1">Description:</p>
+                              <p className="text-sm whitespace-pre-wrap">{cellDescription}</p>
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
+                    </TableCell>
+                  )
+                })}
                 <TableCell className="text-right font-medium w-[120px]">
                   {getDailyTotal(date) !== 0 ? formatCurrency(getDailyTotal(date)) : "-"}
                 </TableCell>

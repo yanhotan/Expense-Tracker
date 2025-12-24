@@ -20,6 +20,7 @@ public interface SheetCategoryRepository extends JpaRepository<SheetCategory, UU
     /**
      * Find all categories for a sheet.
      * Returns categories ordered by display order.
+     * Note: Sorting with nulls is handled in service layer to avoid JPQL limitations.
      */
     List<SheetCategory> findBySheetIdOrderByDisplayOrderAsc(UUID sheetId);
 
@@ -44,9 +45,10 @@ public interface SheetCategoryRepository extends JpaRepository<SheetCategory, UU
     /**
      * Get distinct categories for a sheet.
      * Used to get unique category names.
+     * Note: If no categories exist, returns empty list (not an error).
+     * Returns categories without ordering - sorting handled in service layer.
      */
-    @Query("SELECT DISTINCT sc.category FROM SheetCategory sc WHERE sc.sheetId = :sheetId " +
-           "ORDER BY sc.displayOrder ASC")
+    @Query("SELECT DISTINCT sc.category FROM SheetCategory sc WHERE sc.sheetId = :sheetId")
     List<String> findDistinctCategoriesBySheetId(@Param("sheetId") UUID sheetId);
 
     /**
