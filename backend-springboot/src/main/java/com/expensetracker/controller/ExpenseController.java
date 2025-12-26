@@ -3,6 +3,7 @@ package com.expensetracker.controller;
 import com.expensetracker.dto.ApiResponse;
 import com.expensetracker.dto.ExpenseDTO;
 import com.expensetracker.service.ExpenseService;
+import com.expensetracker.util.SecurityUtils;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,9 +21,6 @@ public class ExpenseController {
 
     private final ExpenseService expenseService;
 
-    // Default user ID for now (until auth is implemented)
-    private static final UUID DEFAULT_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
-
     public ExpenseController(ExpenseService expenseService) {
         this.expenseService = expenseService;
     }
@@ -37,11 +35,12 @@ public class ExpenseController {
             @RequestParam(required = false) String month,
             @RequestParam(required = false) String year) {
         System.out.println("═══════════════════════════════════════════════════════════");
-        System.out.println("🔍 ExpenseController.getExpenses called with DEFAULT_USER_ID: " + DEFAULT_USER_ID);
         System.out.println("🔍 Parameters - sheetId: " + sheetId + ", month: " + month + ", year: " + year);
         System.out.println("═══════════════════════════════════════════════════════════");
         try {
-            List<ExpenseDTO> expenses = expenseService.getExpenses(DEFAULT_USER_ID, sheetId, month, year);
+            UUID userId = SecurityUtils.getCurrentUserId();
+            System.out.println("🔍 ExpenseController.getExpenses called with userId: " + userId);
+            List<ExpenseDTO> expenses = expenseService.getExpenses(userId, sheetId, month, year);
             System.out.println("✅ Returning " + expenses.size() + " expenses");
             return ResponseEntity.ok(ApiResponse.success(expenses, expenses.size()));
         } catch (Exception e) {
@@ -69,7 +68,7 @@ public class ExpenseController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<ExpenseDTO>> getExpenseById(@PathVariable UUID id) {
-        ExpenseDTO expense = expenseService.getExpenseById(DEFAULT_USER_ID, id);
+        ExpenseDTO expense = expenseService.getExpenseById(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(expense));
     }
 
@@ -78,7 +77,7 @@ public class ExpenseController {
      */
     @PostMapping
     public ResponseEntity<ApiResponse<ExpenseDTO>> createExpense(@Valid @RequestBody ExpenseDTO expenseDTO) {
-        ExpenseDTO created = expenseService.createExpense(DEFAULT_USER_ID, expenseDTO);
+        ExpenseDTO created = expenseService.createExpense(SecurityUtils.getCurrentUserId(), expenseDTO);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(created));
     }
 
@@ -89,7 +88,7 @@ public class ExpenseController {
     public ResponseEntity<ApiResponse<ExpenseDTO>> updateExpense(
             @PathVariable UUID id,
             @Valid @RequestBody ExpenseDTO expenseDTO) {
-        ExpenseDTO updated = expenseService.updateExpense(DEFAULT_USER_ID, id, expenseDTO);
+        ExpenseDTO updated = expenseService.updateExpense(SecurityUtils.getCurrentUserId(), id, expenseDTO);
         return ResponseEntity.ok(ApiResponse.success(updated));
     }
 
@@ -98,7 +97,7 @@ public class ExpenseController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteExpense(@PathVariable UUID id) {
-        expenseService.deleteExpense(DEFAULT_USER_ID, id);
+        expenseService.deleteExpense(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(null, "Expense deleted successfully"));
     }
 }

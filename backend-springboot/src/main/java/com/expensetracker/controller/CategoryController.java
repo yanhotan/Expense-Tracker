@@ -2,6 +2,7 @@ package com.expensetracker.controller;
 
 import com.expensetracker.dto.ApiResponse;
 import com.expensetracker.service.CategoryService;
+import com.expensetracker.util.SecurityUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,9 +19,6 @@ import java.util.UUID;
 public class CategoryController {
 
     private final CategoryService categoryService;
-
-    // Default user ID for now (until auth is implemented)
-    private static final UUID DEFAULT_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
 
     public CategoryController(CategoryService categoryService) {
         System.out.println("🔧 CategoryController constructor called - CategoryService: " + (categoryService != null ? "OK" : "NULL"));
@@ -92,7 +90,7 @@ public class CategoryController {
         String oldName = (String) body.get("oldName");
         String newName = (String) body.get("newName");
 
-        String updated = categoryService.updateCategory(sheetId, DEFAULT_USER_ID, oldName, newName);
+        String updated = categoryService.updateCategory(sheetId, SecurityUtils.getCurrentUserId(), oldName, newName);
         return ResponseEntity.ok(ApiResponse.success(updated));
     }
 
@@ -105,7 +103,7 @@ public class CategoryController {
         UUID sheetId = UUID.fromString((String) body.get("sheetId"));
         String category = (String) body.get("category");
 
-        categoryService.deleteCategory(sheetId, DEFAULT_USER_ID, category);
+        categoryService.deleteCategory(sheetId, SecurityUtils.getCurrentUserId(), category);
         return ResponseEntity.ok(ApiResponse.success(null, "Category deleted successfully"));
     }
 }

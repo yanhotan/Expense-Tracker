@@ -297,7 +297,6 @@ export default function ExpenseSpreadsheet({
           amount,
           category,
           description: undefined,
-          user_id: '00000000-0000-0000-0000-000000000000',
           sheet_id: sheetId,
           created_at: new Date().toISOString()
         }
@@ -325,7 +324,6 @@ export default function ExpenseSpreadsheet({
             ...existingExpense,
             amount,
             date: formattedDate,
-            user_id: existingExpense.user_id || '00000000-0000-0000-0000-000000000000',
             sheet_id: existingExpense.sheet_id || sheetId
           })
 
@@ -343,8 +341,7 @@ export default function ExpenseSpreadsheet({
           date: formattedDate,
           category,
           amount,
-          sheet_id: sheetId,
-          user_id: '00000000-0000-0000-0000-000000000000'
+          sheet_id: sheetId
         })
 
         // Replace temporary expense with server response

@@ -30,6 +30,13 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
     Page<Expense> findByUserId(UUID userId, Pageable pageable);
 
     /**
+     * Find all expenses for a specific user (no pagination).
+     * Used for data migration and administrative operations.
+     */
+    @Query("SELECT e FROM Expense e WHERE e.userId = :userId")
+    List<Expense> findAllByUserId(@Param("userId") UUID userId);
+
+    /**
      * Find expenses by user and sheet ID with pagination.
      * Optimized with EntityGraph to avoid N+1 queries.
      */

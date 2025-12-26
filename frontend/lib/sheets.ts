@@ -24,7 +24,7 @@ export async function getExpenseSheets(): Promise<ExpenseSheet[]> {
       pin: sheet.pin || null,
       has_pin: sheet.hasPin || false,
       created_at: sheet.createdAt || sheet.created_at,
-      user_id: sheet.userId || sheet.user_id || '00000000-0000-0000-0000-000000000000'
+      user_id: sheet.userId || sheet.user_id
     }));
 
     console.log(`✅ Fetched ${sheets.length} sheets from Spring Boot backend`);
@@ -69,7 +69,7 @@ export async function createExpenseSheet(sheet: { name: string; pin?: string }):
         pin: response.data.pin || null,
         has_pin: response.data.hasPin || response.data.has_pin || false,
         created_at: response.data.createdAt || response.data.created_at,
-        user_id: response.data.userId || response.data.user_id || '00000000-0000-0000-0000-000000000000'
+        user_id: response.data.userId || response.data.user_id
       };
       
       console.log('✅ Sheet created successfully:', newSheet.id);

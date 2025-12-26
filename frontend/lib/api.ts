@@ -1,24 +1,42 @@
 // API configuration for connecting to Spring Boot backend
 import { Expense, ColumnDescription } from './types.js'
 
-// Spring Boot backend URL
-// In development, connect directly to Spring Boot at port 8080
-// In production, this would be your deployed backend URL
-const SPRING_BOOT_API = process.env.NEXT_PUBLIC_SPRING_BOOT_API || 'http://localhost:8080/api'
+// Spring Boot Backend - Single source for all API calls
+const SPRING_BOOT_API = 'http://localhost:8080/api'
 
-// Use Spring Boot directly or Next.js proxy based on environment
+// Use Spring Boot backend for all API calls
 const API_BASE = process.env.NODE_ENV === 'production'
   ? '/api'  // Production: use Next.js proxy or same domain
   : SPRING_BOOT_API  // Development: connect directly to Spring Boot
 
 console.log(`🔗 API Base URL: ${API_BASE}`)
 
+// All endpoints now use Spring Boot backend
+function getApiBase(endpoint: string): string {
+  return API_BASE
+}
+
+// Get JWT token from NextAuth session
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const response = await fetch('/api/auth/session')
+    if (response.ok) {
+      const session = await response.json()
+      return session?.user?.accessToken || null
+    }
+  } catch (error) {
+    console.error('Failed to get auth token:', error)
+  }
+  return null
+}
+
 // Generic API request function with error handling
 async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = `${API_BASE}${endpoint}`
+  const baseUrl = getApiBase(endpoint)
+  const url = `${baseUrl}${endpoint}`
 
   console.log(`API Request: ${options.method || 'GET'} ${url}`);
   if (options.body) {
@@ -26,15 +44,23 @@ async function apiRequest<T>(
   }
 
   try {
+    // Get JWT token for authenticated requests
+    const token = await getAuthToken()
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    }
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
     // Add timeout to prevent hanging requests
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout
 
     const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
       signal: controller.signal,
       ...options,
     })
@@ -111,14 +137,13 @@ export const expenseApi = {
   },
 
   // Create new expense
-  async create(expense: Omit<Expense, 'id' | 'created_at'>) {
+  async create(expense: Omit<Expense, 'id' | 'created_at' | 'user_id'>) {
     const payload = {
       date: expense.date,
       amount: expense.amount,
       category: expense.category,
       description: expense.description,
-      sheetId: expense.sheet_id,
-      userId: expense.user_id || '00000000-0000-0000-0000-000000000000'
+      sheetId: expense.sheet_id
     }
 
     const response = await apiRequest<{ data: any; success: boolean }>('/expenses', {
@@ -131,14 +156,12 @@ export const expenseApi = {
 
   // Update expense
   async update(id: string, expense: Partial<Expense>) {
-    const payload = {
-      date: expense.date,
-      amount: expense.amount,
-      category: expense.category,
-      description: expense.description,
-      sheetId: expense.sheet_id,
-      userId: expense.user_id || '00000000-0000-0000-0000-000000000000'
-    }
+    const payload: any = {}
+    if (expense.date !== undefined) payload.date = expense.date
+    if (expense.amount !== undefined) payload.amount = expense.amount
+    if (expense.category !== undefined) payload.category = expense.category
+    if (expense.description !== undefined) payload.description = expense.description
+    if (expense.sheet_id !== undefined) payload.sheetId = expense.sheet_id
 
     const response = await apiRequest<{ data: any; success: boolean }>(`/expenses/${id}`, {
       method: 'PUT',

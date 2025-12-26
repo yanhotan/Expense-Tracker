@@ -3,6 +3,7 @@ package com.expensetracker.controller;
 import com.expensetracker.dto.ApiResponse;
 import com.expensetracker.dto.ExpenseSheetDTO;
 import com.expensetracker.service.ExpenseSheetService;
+import com.expensetracker.util.SecurityUtils;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,9 +21,6 @@ public class ExpenseSheetController {
 
     private final ExpenseSheetService sheetService;
 
-    // Default user ID for now (until auth is implemented)
-    private static final UUID DEFAULT_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
-
     public ExpenseSheetController(ExpenseSheetService sheetService) {
         this.sheetService = sheetService;
     }
@@ -32,7 +30,7 @@ public class ExpenseSheetController {
      */
     @GetMapping
     public ResponseEntity<ApiResponse<List<ExpenseSheetDTO>>> getSheets() {
-        List<ExpenseSheetDTO> sheets = sheetService.getSheets(DEFAULT_USER_ID);
+        List<ExpenseSheetDTO> sheets = sheetService.getSheets(SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(ApiResponse.success(sheets, sheets.size()));
     }
 
@@ -41,7 +39,7 @@ public class ExpenseSheetController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<ExpenseSheetDTO>> getSheetById(@PathVariable UUID id) {
-        ExpenseSheetDTO sheet = sheetService.getSheetById(DEFAULT_USER_ID, id);
+        ExpenseSheetDTO sheet = sheetService.getSheetById(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(sheet));
     }
 
@@ -50,7 +48,7 @@ public class ExpenseSheetController {
      */
     @PostMapping
     public ResponseEntity<ApiResponse<ExpenseSheetDTO>> createSheet(@Valid @RequestBody ExpenseSheetDTO sheetDTO) {
-        ExpenseSheetDTO created = sheetService.createSheet(DEFAULT_USER_ID, sheetDTO);
+        ExpenseSheetDTO created = sheetService.createSheet(SecurityUtils.getCurrentUserId(), sheetDTO);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(created));
     }
 
@@ -61,7 +59,7 @@ public class ExpenseSheetController {
     public ResponseEntity<ApiResponse<ExpenseSheetDTO>> updateSheet(
             @PathVariable UUID id,
             @Valid @RequestBody ExpenseSheetDTO sheetDTO) {
-        ExpenseSheetDTO updated = sheetService.updateSheet(DEFAULT_USER_ID, id, sheetDTO);
+        ExpenseSheetDTO updated = sheetService.updateSheet(SecurityUtils.getCurrentUserId(), id, sheetDTO);
         return ResponseEntity.ok(ApiResponse.success(updated));
     }
 
@@ -70,7 +68,7 @@ public class ExpenseSheetController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteSheet(@PathVariable UUID id) {
-        sheetService.deleteSheet(DEFAULT_USER_ID, id);
+        sheetService.deleteSheet(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(null, "Sheet deleted successfully"));
     }
 }

@@ -3,6 +3,7 @@ package com.expensetracker.controller;
 import com.expensetracker.dto.ApiResponse;
 import com.expensetracker.dto.ColumnDescriptionDTO;
 import com.expensetracker.service.DescriptionService;
+import com.expensetracker.util.SecurityUtils;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,9 +21,6 @@ public class DescriptionController {
 
     private final DescriptionService descriptionService;
 
-    // Default user ID for now (until auth is implemented)
-    private static final UUID DEFAULT_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
-
     public DescriptionController(DescriptionService descriptionService) {
         this.descriptionService = descriptionService;
     }
@@ -33,7 +31,7 @@ public class DescriptionController {
     @GetMapping
     public ResponseEntity<ApiResponse<List<ColumnDescriptionDTO>>> getDescriptions(
             @RequestParam(required = false) String columnName) {
-        List<ColumnDescriptionDTO> descriptions = descriptionService.getDescriptionsByUserId(DEFAULT_USER_ID);
+        List<ColumnDescriptionDTO> descriptions = descriptionService.getDescriptionsByUserId(SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(ApiResponse.success(descriptions, descriptions.size()));
     }
 
@@ -49,7 +47,7 @@ public class DescriptionController {
             dto.setColumnName("notes");
         }
         
-        ColumnDescriptionDTO saved = descriptionService.saveDescription(DEFAULT_USER_ID, dto);
+        ColumnDescriptionDTO saved = descriptionService.saveDescription(SecurityUtils.getCurrentUserId(), dto);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(saved));
     }
 

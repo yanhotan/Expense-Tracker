@@ -6,6 +6,7 @@ import "./globals.css"
 import { Toaster } from "../components/ui/toaster"
 import { ThemeProvider } from "../components/theme-provider"
 import { QueryProvider } from "../components/query-provider"
+import { AuthSessionProvider } from "../components/providers/session-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -22,13 +23,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <QueryProvider>
-            {children}
-            <Toaster />
-          </QueryProvider>
-        </ThemeProvider>
+      <body className={inter.className} suppressHydrationWarning={true}>
+        <AuthSessionProvider>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            <QueryProvider>
+              {children}
+              <Toaster />
+            </QueryProvider>
+          </ThemeProvider>
+        </AuthSessionProvider>
       </body>
     </html>
   )

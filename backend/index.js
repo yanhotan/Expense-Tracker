@@ -7,6 +7,7 @@ import categoriesRouter from './categories.js';
 import analyticsRouter from './analytics.js';
 import sheetsRouter from './sheets.js';
 import descriptionsRouter from './descriptions.js';
+import authRouter from './auth.js';
 
 const app = express();
 const corsOptions = {
@@ -53,6 +54,7 @@ app.get('/api/debug/tables', async (req, res) => {
   }
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api/expenses', expensesRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/analytics', analyticsRouter);
