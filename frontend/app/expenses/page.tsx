@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { PlusCircle } from "lucide-react"
 import { useState, useEffect } from "react"
-
+ 
 import { Button } from "@/components/ui/button"
 import { ExpenseTable } from "@/components/expense-table"
 import { Expense } from "@/lib/data"
