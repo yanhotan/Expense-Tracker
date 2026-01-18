@@ -1,0 +1,41 @@
+name: Build Assets
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.2.2'
+        bundler-cache: true
+
+    - name: Install dependencies
+      run: bundle install
+
+    - name: Build Tailwind CSS
+      run: bundle exec rake tailwindcss:build
+
+    - name: Precompile assets
+      run: bundle exec rake assets:precompile
+
+    - name: Upload built assets
+      uses: actions/upload-artifact@v4
+      with:
+        name: compiled-assets
+        path: |
+          public/assets/
+          public/index.html
+          public/favicon.ico
+          public/favicon.svg
+        retention-days: 1

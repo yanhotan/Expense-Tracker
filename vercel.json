@@ -1,0 +1,8 @@
+{
+  "buildCommand": "bundle exec rake assets:precompile && bundle exec rake tailwindcss:build",
+  "outputDirectory": "public",
+  "framework": null,
+  "rewrites": [
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ]
+}

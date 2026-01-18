@@ -1,9 +1,68 @@
-backend/node_modules/
-frontend/node_modules/
+# See https://help.github.com/articles/ignoring-files for more about ignoring files.
 
-/node_modules/
-# Cursor IDE
-.cursor/
+# Environment variables
+.env
+.env.local
+.env.*.local
 
-#backup
-backend/db_cluster-25-08-2025@22-20-08.backup
+# Ignore bundler config.
+/.bundle
+
+# Ignore all logfiles and tempfiles.
+/log/*
+/tmp/*
+!/log/.keep
+!/tmp/.keep
+
+# Ignore pidfiles, but keep the directory.
+/tmp/pids/*
+!/tmp/pids/
+!/tmp/pids/.keep
+
+# Ignore storage (if using ActiveStorage)
+/storage/*
+!/storage/.keep
+/tmp/storage/*
+!/tmp/storage/
+!/tmp/storage/.keep
+
+# Ignore uploaded files in development.
+/public/uploads
+
+# Ignore master key for decrypting credentials and more.
+/config/master.key
+
+# Ignore node_modules
+/node_modules
+
+# Ignore precompiled assets
+/public/assets
+/public/packs
+/public/packs-test
+
+# Ignore yarn files
+/yarn-error.log
+yarn-debug.log*
+.yarn-integrity
+
+# Ignore byebug command history file.
+.byebug_history
+
+# Ignore database files
+*.sqlite3
+*.sqlite3-*
+
+# Ignore coverage
+/coverage/
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Ignore Tailwind build output (optional, depends on your setup)
+/app/assets/builds/*
+!/app/assets/builds/.keep

@@ -1,0 +1,180 @@
+<div data-controller="spreadsheet" 
+     data-spreadsheet-sheet-id-value="<%= sheet.id %>"
+     data-spreadsheet-month-value="<%= current_month.strftime('%Y-%m') %>">
+  
+  <!-- Header -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+    <div class="flex items-center gap-3">
+      <!-- Previous Month -->
+      <%= link_to expense_sheet_path(sheet, month: (current_month - 1.month).strftime('%Y-%m')), 
+          class: "p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors",
+          data: { turbo_frame: "_top" } do %>
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        </svg>
+      <% end %>
+
+      <!-- Month/Year Selectors -->
+      <div class="flex items-center gap-2">
+        <select data-spreadsheet-target="monthSelect" 
+                data-action="change->spreadsheet#changeMonth"
+                class="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+          <% Date::MONTHNAMES.compact.each_with_index do |month_name, index| %>
+            <option value="<%= index + 1 %>" <%= 'selected' if current_month.month == index + 1 %>>
+              <%= month_name %>
+            </option>
+          <% end %>
+        </select>
+
+        <select data-spreadsheet-target="yearSelect"
+                data-action="change->spreadsheet#changeMonth"
+                class="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+          <% ((Date.today.year - 2)..(Date.today.year + 1)).each do |year| %>
+            <option value="<%= year %>" <%= 'selected' if current_month.year == year %>><%= year %></option>
+          <% end %>
+        </select>
+      </div>
+
+      <!-- Next Month -->
+      <%= link_to expense_sheet_path(sheet, month: (current_month + 1.month).strftime('%Y-%m')), 
+          class: "p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors",
+          data: { turbo_frame: "_top" } do %>
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+      <% end %>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <!-- Theme Toggle Button -->
+      <div data-controller="theme-toggle">
+        <button type="button" 
+                data-action="click->theme-toggle#toggle"
+                class="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                title="Toggle dark mode">
+          <!-- Sun icon (shown in dark mode) -->
+          <svg data-theme-toggle-target="sunIcon" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+          <!-- Moon icon (shown in light mode) -->
+          <svg data-theme-toggle-target="moonIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        </button>
+      </div>
+      
+      <!-- Add Category Button -->
+      <button type="button" 
+              data-action="click->spreadsheet#openCategoryModal"
+              class="inline-flex items-center px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
+        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Add Category
+      </button>
+    </div>
+  </div>
+
+  <!-- Spreadsheet Table -->
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[800px]">
+      <thead>
+        <tr class="bg-slate-50 dark:bg-slate-800/50">
+          <th class="sticky left-0 z-10 bg-slate-50 dark:bg-slate-800/50 px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32">
+            Date
+          </th>
+          <% categories.each do |category| %>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider min-w-[120px]">
+              <div class="flex items-center justify-center gap-1">
+                <span><%= category.name %></span>
+                <div class="relative" data-controller="dropdown">
+                  <button type="button" 
+                          data-action="click->dropdown#toggle"
+                          class="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                  </button>
+                  <div data-dropdown-target="menu" 
+                       class="hidden absolute right-0 mt-1 w-32 bg-white dark:bg-slate-700 rounded-lg shadow-lg border border-slate-200 dark:border-slate-600 py-1 z-20">
+                    <button type="button" 
+                            data-action="click->spreadsheet#editCategory"
+                            data-category-id="<%= category.id %>"
+                            data-category-name="<%= category.name %>"
+                            class="w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600">
+                      Rename
+                    </button>
+                    <button type="button" 
+                            data-action="click->spreadsheet#deleteCategory"
+                            data-category-id="<%= category.id %>"
+                            class="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </th>
+          <% end %>
+          <th class="px-4 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32">
+            Daily Total
+          </th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+        <% (current_month.beginning_of_month..current_month.end_of_month).each do |date| %>
+          <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+            <td class="sticky left-0 z-10 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-900 dark:text-white whitespace-nowrap">
+              <%= date.strftime("%a, %b %d") %>
+            </td>
+            <% categories.each do |category| %>
+              <% expense = expenses.find { |e| e.date == date && e.category == category.name } %>
+              <td class="px-2 py-1">
+                <%= form_with url: expense ? expense_path(expense) : expense_sheet_expenses_path(sheet),
+                    method: expense ? :patch : :post,
+                    local: false,
+                    data: { 
+                      controller: "expense-cell",
+                      expense_cell_expense_id_value: expense&.id || "",
+                      expense_cell_date_value: date.to_s,
+                      expense_cell_category_value: category.name,
+                      expense_cell_sheet_id_value: sheet.id
+                    } do |f| %>
+                  <input type="hidden" name="expense[date]" value="<%= date %>">
+                  <input type="hidden" name="expense[category]" value="<%= category.name %>">
+                  <input type="text"
+                         name="expense[amount]"
+                         value="<%= expense&.amount&.to_f if expense&.amount&.to_f&.> 0 %>"
+                         placeholder="0.00"
+                         inputmode="decimal"
+                         autocomplete="off"
+                         data-expense-cell-target="input"
+                         data-action="blur->expense-cell#save keydown->expense-cell#save"
+                         class="w-full px-2 py-2 text-sm text-center bg-transparent border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded transition-colors <%= expense&.column_description ? 'bg-lime-100 dark:bg-lime-900/20' : '' %>">
+                <% end %>
+              </td>
+            <% end %>
+            <td class="px-4 py-2 text-sm font-medium text-right text-slate-900 dark:text-white">
+              <% daily_total = expenses.select { |e| e.date == date }.sum(&:amount) %>
+              <%= daily_total > 0 ? number_to_currency(daily_total) : '-' %>
+            </td>
+          </tr>
+        <% end %>
+        <!-- Monthly Total Row -->
+        <tr class="bg-slate-100 dark:bg-slate-800 font-semibold">
+          <td class="sticky left-0 z-10 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white">
+            Monthly Total
+          </td>
+          <% categories.each do |category| %>
+            <td class="px-4 py-3 text-sm text-center text-slate-900 dark:text-white">
+              <% category_total = expenses.select { |e| e.category == category.name }.sum(&:amount) %>
+              <%= number_to_currency(category_total) %>
+            </td>
+          <% end %>
+          <td class="px-4 py-3 text-sm text-right text-emerald-600 dark:text-emerald-400 font-bold">
+            <%= number_to_currency(expenses.sum(&:amount)) %>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

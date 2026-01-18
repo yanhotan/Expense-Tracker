@@ -1,0 +1,144 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <% if user_signed_in? %>
+    <div class="flex flex-col lg:flex-row gap-6">
+      <!-- Sidebar: Sheet Selector -->
+      <aside class="lg:w-64 flex-shrink-0">
+        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Expense Sheets</h2>
+            <%= link_to new_expense_sheet_path, class: "p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors", data: { turbo_frame: "modal" } do %>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            <% end %>
+          </div>
+
+          <nav class="space-y-1">
+            <% @expense_sheets.each do |sheet| %>
+              <%= link_to expense_sheet_path(sheet), 
+                  class: "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors #{sheet == @current_sheet ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}",
+                  data: { turbo_frame: "_top" } do %>
+                <svg class="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span class="truncate"><%= sheet.name %></span>
+                <% if sheet.has_pin %>
+                  <svg class="w-4 h-4 ml-auto text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                <% end %>
+              <% end %>
+            <% end %>
+          </nav>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <div class="flex-1 min-w-0">
+        <% if @current_sheet %>
+          <!-- Spreadsheet -->
+          <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <%= render "expense_sheets/spreadsheet", 
+                sheet: @current_sheet, 
+                expenses: @expenses, 
+                categories: @categories,
+                current_month: @current_month %>
+          </div>
+
+          <!-- Analytics -->
+          <% if @analytics.present? %>
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+                <h3 class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">This Month</h3>
+                <p class="text-2xl font-bold text-slate-900 dark:text-white">
+                  <%= number_to_currency(@analytics[:current_month_total] || 0) %>
+                </p>
+              </div>
+
+              <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+                <h3 class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Last Month</h3>
+                <p class="text-2xl font-bold text-slate-900 dark:text-white">
+                  <%= number_to_currency(@analytics[:previous_month_total] || 0) %>
+                </p>
+              </div>
+
+              <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+                <h3 class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Top Category</h3>
+                <% top_category = @analytics[:category_totals]&.max_by { |_, v| v } %>
+                <p class="text-2xl font-bold text-slate-900 dark:text-white capitalize">
+                  <%= top_category&.first || "N/A" %>
+                </p>
+              </div>
+            </div>
+          <% end %>
+        <% else %>
+          <!-- Empty State -->
+          <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-12 text-center">
+            <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+            </svg>
+            <h3 class="mt-4 text-lg font-medium text-slate-900 dark:text-white">No expense sheets</h3>
+            <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Get started by creating your first expense sheet.
+            </p>
+            <%= link_to "Create Sheet", new_expense_sheet_path, class: "mt-6 inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors", data: { turbo_frame: "modal" } %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% else %>
+    <!-- Landing Page -->
+    <div class="text-center py-20">
+      <h1 class="text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white mb-6">
+        Track Your Expenses
+        <span class="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+          Effortlessly
+        </span>
+      </h1>
+      <p class="text-xl text-slate-600 dark:text-slate-400 mb-8 max-w-2xl mx-auto">
+        A modern, spreadsheet-style expense tracker with analytics, multiple sheets, and PIN protection.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <%= link_to "Get Started", new_user_registration_path, class: "inline-flex items-center justify-center px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors" %>
+        <%= link_to "Sign In", new_user_session_path, class: "inline-flex items-center justify-center px-6 py-3 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium rounded-lg transition-colors" %>
+      </div>
+
+      <!-- Features -->
+      <div class="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+        <div class="p-6">
+          <div class="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Spreadsheet View</h3>
+          <p class="text-slate-600 dark:text-slate-400">Familiar spreadsheet-style interface for quick expense entry.</p>
+        </div>
+
+        <div class="p-6">
+          <div class="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Analytics</h3>
+          <p class="text-slate-600 dark:text-slate-400">Visualize spending patterns with charts and insights.</p>
+        </div>
+
+        <div class="p-6">
+          <div class="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">PIN Protection</h3>
+          <p class="text-slate-600 dark:text-slate-400">Secure sensitive expense sheets with PIN codes.</p>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</div>
+
+<!-- Modal Frame -->
+<%= turbo_frame_tag "modal" %>
