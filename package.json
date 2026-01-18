@@ -3,7 +3,8 @@
     "version": "1.0.0",
     "description": "Assets for Expense Tracker app",
     "scripts": {
-        "build": "echo 'Starting asset build...' && export BUNDLE_JOBS=1 && bundle config set --local without 'development test production' && bundle install --jobs=1 && echo 'Assets pre-built and ready for deployment'"
+        "build": "echo 'Assets already pre-compiled - ready to serve'",
+        "vercel-build": "echo 'Assets already pre-compiled - ready to serve'"
     },
     "dependencies": {},
     "devDependencies": {},

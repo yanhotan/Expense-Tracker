@@ -35,8 +35,8 @@
 # Ignore node_modules
 /node_modules
 
-# Ignore precompiled assets
-/public/assets
+# Ignore precompiled assets (commented out for Vercel deployment)
+# /public/assets
 /public/packs
 /public/packs-test
 
