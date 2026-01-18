@@ -5,7 +5,9 @@ ruby ">= 3.2.2", "< 4.0"
 gem "rails", "~> 7.1.0"
 
 # Database
-gem "pg", "~> 1.5"
+group :production do
+  gem "pg", "~> 1.5"
+end
 
 # Web server
 gem "puma", "~> 6.4"
