@@ -1,5 +1,5 @@
 source "https://rubygems.org"
-ruby "3.2.2"
+ruby ">= 3.2.2", "< 4.0"
 
 # Rails framework
 gem "rails", "~> 7.1.0"

@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "description": "Assets for Expense Tracker app",
     "scripts": {
-        "build": "bundle install --path vendor/bundle && bundle exec rake assets:precompile && bundle exec rake tailwindcss:build"
+        "build": "export BUNDLE_PATH=vendor/bundle && bundle install --without development test && bundle exec rake assets:precompile && bundle exec rake tailwindcss:build"
     },
     "dependencies": {},
     "devDependencies": {},
