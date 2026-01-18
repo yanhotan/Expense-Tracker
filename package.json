@@ -1,0 +1,13 @@
+{
+    "name": "expense-tracker",
+    "version": "1.0.0",
+    "description": "Assets for Expense Tracker app",
+    "scripts": {
+        "build": "bundle install --path vendor/bundle && bundle exec rake assets:precompile && bundle exec rake tailwindcss:build"
+    },
+    "dependencies": {},
+    "devDependencies": {},
+    "engines": {
+        "node": ">=14.0.0"
+    }
+}
