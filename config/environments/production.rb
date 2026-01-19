@@ -6,6 +6,11 @@ Rails.application.configure do
   config.consider_all_requests_local = false
   config.action_controller.perform_caching = true
 
+  # Allow Railway hosts
+  config.hosts << "expense-tracker-production-693a.up.railway.app"
+  # Allow any Railway domain (for flexibility)
+  config.hosts << /.*\.railway\.app/
+
   config.public_file_server.enabled = ENV["RAILS_SERVE_STATIC_FILES"].present?
 
   config.assets.compile = false
